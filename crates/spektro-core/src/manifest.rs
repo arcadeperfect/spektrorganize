@@ -89,6 +89,10 @@ pub struct Manifest {
     pub created_at: DateTime<Utc>,
     pub source_label: String,
     pub source_root: PathBuf,
+    /// What this import was, in the photographer's own words. Copied onto every photo it
+    /// brings in, so the description survives the card, the folder and the file names.
+    #[serde(default)]
+    pub description: Option<String>,
     /// Roots as they were at import time (absolute).
     pub archive_root: PathBuf,
     pub video_root: PathBuf,
@@ -113,6 +117,7 @@ impl Manifest {
             render_root: cfg.render_root.clone(),
             config: cfg.clone(),
             preset,
+            description: None,
             entries: Vec::new(),
         }
     }

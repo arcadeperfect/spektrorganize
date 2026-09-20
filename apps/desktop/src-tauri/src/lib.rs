@@ -24,6 +24,8 @@ pub struct AppState {
     scan: Mutex<Option<Arc<Scan>>>,
     excluded: Mutex<HashSet<u32>>,
     dupes: Mutex<ImportDupes>,
+    /// What this import is about, typed on the Layout screen.
+    description: Mutex<Option<String>>,
     plan: Mutex<Option<Arc<Plan>>>,
     cancel: Mutex<Option<Cancel>>,
     busy: AtomicBool,
@@ -71,6 +73,8 @@ pub struct ScanView {
     /// Copies found inside the scan, and photos the catalog already holds.
     pub copies: usize,
     pub already_held: usize,
+    /// Numbered runs of images, for collapsing the review.
+    pub sequences: Vec<spektro_core::sequence::SeqGroup>,
 }
 
 fn scan_view(scan: &Scan, excluded: &HashSet<u32>, dupes: &ImportDupes) -> ScanView {
@@ -105,6 +109,8 @@ fn scan_view(scan: &Scan, excluded: &HashSet<u32>, dupes: &ImportDupes) -> ScanV
         errors: scan.errors.iter().map(|(p, e)| (p.to_string_lossy().to_string(), e.clone())).collect(),
         copies: dupes.copies.len(),
         already_held: dupes.known.len(),
+        // Four numbered files in a row is a sequence; three holiday snaps are not.
+        sequences: spektro_core::sequence::detect(scan, 4),
     }
 }
 
@@ -251,6 +257,18 @@ fn get_scan(state: State<AppState>) -> Option<ScanView> {
     Some(scan_view(&scan, &state.excluded.lock().unwrap(), &state.dupes.lock().unwrap()))
 }
 
+/// What this import is, in the photographer's words. Kept on every photo it brings in.
+#[tauri::command]
+fn set_import_description(state: State<AppState>, text: String) {
+    let text = text.trim().to_string();
+    *state.description.lock().unwrap() = (!text.is_empty()).then_some(text);
+}
+
+#[tauri::command]
+fn get_import_description(state: State<AppState>) -> Option<String> {
+    state.description.lock().unwrap().clone()
+}
+
 #[tauri::command]
 fn set_excluded(state: State<AppState>, ids: Vec<u32>, excluded: bool) {
     let mut ex = state.excluded.lock().unwrap();
@@ -333,7 +351,9 @@ fn start_import(app: AppHandle, state: State<AppState>, render: bool) -> Result<
         });
         let hook_app = app.clone();
         let after_copy = move |path: &Path, m: &Manifest| catalog::index_manifest(&hook_app, path, m);
-        let result = spektro_core::job::run_import(&scan, &plan, &cfg, render, sink, &cancel, Some(&after_copy));
+        let description = app.state::<AppState>().description.lock().unwrap().clone();
+        let result =
+            spektro_core::job::run_import(&scan, &plan, &cfg, render, sink, &cancel, Some(&after_copy), description.as_deref());
         if let Ok(r) = &result
             && r.rendered > 0
         {
@@ -541,6 +561,7 @@ pub fn run() {
                 scan: Mutex::new(None),
                 excluded: Mutex::new(HashSet::new()),
                 dupes: Mutex::new(ImportDupes::default()),
+                description: Mutex::new(None),
                 plan: Mutex::new(None),
                 cancel: Mutex::new(None),
                 busy: AtomicBool::new(false),
@@ -555,6 +576,8 @@ pub fn run() {
             info,
             list_sources,
             get_config,
+            set_import_description,
+            get_import_description,
             default_templates,
             set_config,
             validate_template,
@@ -593,6 +616,8 @@ pub fn run() {
             catalog::catalog_collections,
             catalog::catalog_save_collection,
             catalog::catalog_delete_collection,
+            catalog::catalog_get_setting,
+            catalog::catalog_set_setting,
             catalog::catalog_thumbs_from_prints,
             catalog::catalog_set_thumbs_from_prints,
             catalog::catalog_thumb_data,
@@ -625,6 +650,8 @@ pub fn run() {
             looks::asset_input,
             looks::asset_raw_get,
             looks::asset_raw_set,
+            looks::video_render,
+            looks::look_export_cube,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

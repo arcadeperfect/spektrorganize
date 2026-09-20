@@ -54,6 +54,9 @@ enum Cmd {
         /// Do not record the import in the catalog.
         #[arg(long)]
         no_catalog: bool,
+        /// What this import is, kept on every photo it brings in.
+        #[arg(long)]
+        description: Option<String>,
     },
     /// Re-render the RAWs recorded in a manifest.
     Render {
@@ -349,7 +352,7 @@ fn main() -> anyhow::Result<()> {
                 println!("{} files, {} to copy", plan.files.len(), human(plan.bytes_to_copy(cfg.skip_existing)));
             }
         }
-        Cmd::Import { path, no_render, exclude, no_catalog } => {
+        Cmd::Import { path, no_render, exclude, no_catalog, description } => {
             let cfg = load_config(&cli)?;
             let scan = scan_path(path)?;
             let included: Vec<GroupId> = scan.groups.iter().map(|g| g.id).filter(|g| !exclude.contains(&g.0)).collect();
@@ -362,7 +365,7 @@ fn main() -> anyhow::Result<()> {
                     Err(e) => eprintln!("catalog: indexing failed: {e:#}"),
                 }
             };
-            let report = spektro_core::job::run_import(&scan, &plan, &cfg, !no_render, event_printer(), &Cancel::new(), Some(&index))?;
+            let report = spektro_core::job::run_import(&scan, &plan, &cfg, !no_render, event_printer(), &Cancel::new(), Some(&index), description.as_deref())?;
             if report.rendered > 0 {
                 index(&report.manifest_path, &report.manifest);
             }

@@ -10,7 +10,7 @@ use spektro_core::look::{self, LookMeta, PreviewEngine};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Default)]
 pub struct LookState {
@@ -244,4 +244,60 @@ pub fn asset_raw_get(st: State<CatalogState>, id: i64) -> Result<RawSettings> {
 #[tauri::command]
 pub fn asset_raw_set(st: State<CatalogState>, ids: Vec<i64>, raw: RawSettings) -> Result<()> {
     st.db.lock().unwrap().set_raw_settings(&ids, &raw).map_err(err)
+}
+
+
+// ---------- video ----------
+
+/// Render a clip through a look. Progress arrives as `video-progress`; cancellation uses the
+/// same flag the import job does.
+#[tauri::command]
+pub async fn video_render(
+    app: AppHandle,
+    asset: i64,
+    req: spektro_core::video::render::RenderRequest,
+    preset: Option<Preset>,
+) -> Result<spektro_core::video::render::RenderReport> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static CANCEL: AtomicBool = AtomicBool::new(false);
+    CANCEL.store(false, Ordering::SeqCst);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut req = req;
+        // The source is whatever file the catalog holds for this clip.
+        {
+            let st = app.state::<CatalogState>();
+            let db = st.db.lock().unwrap();
+            req.src = spektro_core::catalog::print::raw_path(&db, asset).map_err(err)??.into();
+        }
+        let data_dir = data_dir(&app.state::<AppState>())?;
+        let out = spektro_core::video::render::render(
+            &req,
+            preset.as_ref(),
+            &data_dir,
+            &|done, total| {
+                let _ = app.emit("video-progress", serde_json::json!({ "done": done, "total": total }));
+            },
+            &|| CANCEL.load(Ordering::SeqCst),
+        )
+        .map_err(|e| format!("{e}"))?;
+        let _ = app.emit("catalog-changed", ());
+        Ok(out)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Save the look as a `.cube` file, for Resolve and anything else that reads one.
+#[tauri::command]
+pub async fn look_export_cube(app: AppHandle, preset: Preset, path: String, size: usize) -> Result<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let data_dir = data_dir(&app.state::<AppState>())?;
+        let cube = spektro_core::video::lut::bake_preset(&preset, &data_dir, size.clamp(2, 64)).map_err(err)?;
+        let name = preset.name.clone();
+        std::fs::write(&path, cube.to_cube_file(&name)).map_err(err)?;
+        Ok(path)
+    })
+    .await
+    .map_err(err)?
 }

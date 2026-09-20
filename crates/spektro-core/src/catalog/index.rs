@@ -696,11 +696,20 @@ pub fn index_manifest(cat: &mut Catalog, manifest_path: &Path, m: &Manifest) -> 
         )?;
     }
     let import_id: i64 = tx.query_row(
-        "INSERT INTO imports (root_id, manifest_rel, source_label, created_at, indexed_at, preset_hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT (root_id, manifest_rel) DO UPDATE SET indexed_at = excluded.indexed_at, preset_hash = excluded.preset_hash
+        "INSERT INTO imports (root_id, manifest_rel, source_label, created_at, indexed_at, preset_hash, description)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT (root_id, manifest_rel) DO UPDATE SET indexed_at = excluded.indexed_at, preset_hash = excluded.preset_hash,
+                                                           description = excluded.description
          RETURNING id",
-        params![archive_id, manifest_rel, m.source_label, m.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(), stamp, preset_hash],
+        params![
+            archive_id,
+            manifest_rel,
+            m.source_label,
+            m.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            stamp,
+            preset_hash,
+            m.description.as_deref(),
+        ],
         |r| r.get(0),
     )?;
     report.import_id = import_id;
@@ -743,6 +752,11 @@ pub fn index_manifest(cat: &mut Catalog, manifest_path: &Path, m: &Manifest) -> 
         }
         let meta = primary_meta.unwrap_or_else(|| FileMeta { meta: tidy_meta(&entries[0].meta), dims: None, duration: None, codec: None });
         let asset = link_group(&tx, &members, false, Some(import_id), || meta, &mut counters)?;
+        // The import's description belongs to every photo it brought in, so it survives the
+        // manifest being moved or the folder being re-organised.
+        if let Some(text) = m.description.as_deref() {
+            tx.execute("UPDATE assets SET description = ?2 WHERE id = ?1 AND description IS NULL", params![asset, text])?;
+        }
         report.assets += 1;
         report.touched_assets.push(asset);
 

@@ -426,6 +426,19 @@ pub fn catalog_delete_collection(st: State<CatalogState>, id: i64) -> Result<()>
     st.db.lock().unwrap().delete_collection(id).map_err(err)
 }
 
+/// A catalog-wide preference, by key.
+#[tauri::command]
+pub fn catalog_get_setting(st: State<CatalogState>, key: String) -> Result<Option<String>> {
+    Ok(st.db.lock().unwrap().setting(&key))
+}
+
+#[tauri::command]
+pub fn catalog_set_setting(app: AppHandle, st: State<CatalogState>, key: String, value: String) -> Result<()> {
+    st.db.lock().unwrap().set_setting(&key, &value).map_err(err)?;
+    let _ = app.emit("catalog-changed", ());
+    Ok(())
+}
+
 /// Whether library thumbnails come from the newest print instead of the camera rendition.
 #[tauri::command]
 pub fn catalog_thumbs_from_prints(st: State<CatalogState>) -> Result<bool> {

@@ -166,8 +166,14 @@ ALTER TABLE assets ADD COLUMN duration REAL;   -- seconds, videos only
 ALTER TABLE assets ADD COLUMN codec TEXT;      -- four-character code, e.g. hvc1 / avc1
 "#;
 
+/// v8: what an import was about, in the photographer's words, kept on every photo of it.
+const V8: &str = r#"
+ALTER TABLE assets ADD COLUMN description TEXT;
+ALTER TABLE imports ADD COLUMN description TEXT;
+"#;
+
 /// Every migration, in order. `user_version` = how many have been applied.
-pub(crate) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
+pub(crate) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 

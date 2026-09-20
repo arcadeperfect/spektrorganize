@@ -3884,6 +3884,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sequitur"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e76c11f559eda90c7ee4716e7866463c16b544c917b3d8851cd3c292482ac92"
+dependencies = [
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4271,6 +4280,7 @@ dependencies = [
  "rayon",
  "rsraw-sys",
  "rusqlite",
+ "sequitur",
  "serde",
  "serde_json",
  "spektrafilm-core",

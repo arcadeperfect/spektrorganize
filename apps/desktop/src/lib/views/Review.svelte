@@ -11,9 +11,25 @@
   const others = $derived(store.scan?.groups.filter((g) => g.kind === "sidecar" || g.kind === "other") ?? []);
   /** Declined copies stay on screen by default, so you can see what was skipped. */
   let showCopies = $state(true);
+  /** Numbered runs shown as one row each, rather than a few hundred. */
+  let collapse = $state(true);
+  const sequences = $derived(store.scan?.sequences ?? []);
+  /** Group ids that belong to a run, mapped to the run they are in. */
+  const inSequence = $derived.by(() => {
+    const m = new Map<number, number>();
+    if (!collapse) return m;
+    sequences.forEach((s, i) => s.members.forEach((id) => m.set(id, i)));
+    return m;
+  });
   const isCopy = (g: GroupView) => g.copy_of !== null || g.known_at !== null;
   const shown = $derived(
-    (filter === "photos" ? photos : filter === "videos" ? videos : others).filter((g) => showCopies || !isCopy(g)),
+    (filter === "photos" ? photos : filter === "videos" ? videos : others)
+      .filter((g) => showCopies || !isCopy(g))
+      // Collapsed: only the first frame of a run stands for the whole run.
+      .filter((g) => {
+        const seq = inSequence.get(g.id);
+        return seq === undefined || sequences[seq].members[0] === g.id;
+      }),
   );
   const embedded = $derived(photos.filter((g) => g.preview === "embedded_preview").length);
   const excludedCount = $derived(store.scan?.groups.filter((g) => g.excluded).length ?? 0);
@@ -41,7 +57,8 @@
       return;
     }
     const excluded = !g.excluded;
-    store.setExcluded([g.id], excluded);
+    const seq = inSequence.get(g.id);
+    store.setExcluded(seq === undefined ? [g.id] : sequences[seq].members, excluded);
     anchor = { index: i, excluded };
   }
   function setAll(excluded: boolean) {
@@ -95,6 +112,20 @@
     </div>
   {/if}
 
+  {#if sequences.length}
+    <div class="card seqs">
+      <div class="row spread">
+        <span class="small">
+          <b>{sequences.length}</b>
+          {sequences.length === 1 ? "image sequence" : "image sequences"} ·
+          {sequences.reduce((n, s) => n + s.frames, 0)} frames
+          {#if collapse}— shown as one row each; every frame is still imported{/if}
+        </span>
+        <button class="mini" onclick={() => (collapse = !collapse)}>{collapse ? "show every frame" : "collapse them"}</button>
+      </div>
+    </div>
+  {/if}
+
   {#if copies || held}
     <div class="card dupes">
       <div class="row spread">
@@ -130,7 +161,12 @@
               <span class="badge">{g.kind === "raw" ? "RAW" : "JPG"}{g.attachments.length ? "+" + g.attachments.length : ""}</span>
             </div>
             <div class="muted small">{when(g)}{g.camera ? " · " + g.camera : ""}{g.iso ? " · ISO " + g.iso : ""}</div>
-            <div class="muted small">{previewLabel(g.preview)}</div>
+            {#if inSequence.get(g.id) !== undefined}
+              {@const s = sequences[inSequence.get(g.id)!]}
+              <div class="small seq">{s.pattern} · {s.frames} frames{s.missing.length ? ` · ${s.missing.length} missing` : ""}</div>
+            {:else}
+              <div class="muted small">{previewLabel(g.preview)}</div>
+            {/if}
           </div>
           {#if g.copy_of !== null}
             <div class="x why">copy on this card</div>
@@ -224,6 +260,13 @@
   }
   .tile:hover {
     border-color: #4a443f;
+  }
+  .seqs {
+    padding: 6px 10px;
+    margin-bottom: 8px;
+  }
+  .seq {
+    color: var(--accent-2);
   }
   .dupes {
     padding: 6px 10px;

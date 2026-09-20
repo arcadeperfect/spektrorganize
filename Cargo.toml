@@ -30,6 +30,7 @@ rsraw-sys = "0.1.1"
 libc = "0.2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 trash = "5"
+sequitur = { version = "0.2", default-features = false }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSValue", "NSDate", "NSArray", "NSDictionary", "NSError"] }
 objc2-av-foundation = { version = "0.3", features = ["AVAsset", "AVAssetImageGenerator", "AVAssetTrack", "AVMediaFormat", "AVTime", "AVMetadataItem", "AVAssetReader", "AVAssetReaderOutput", "AVAssetWriter", "AVAssetWriterInput", "AVVideoSettings", "AVError", "objc2-core-media", "objc2-core-graphics", "objc2-core-video"] }

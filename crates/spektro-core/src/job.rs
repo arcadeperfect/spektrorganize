@@ -74,6 +74,9 @@ pub fn run_import(
     events: EventSink,
     cancel: &Cancel,
     after_copy: Option<AfterCopy>,
+    // What this import is, in the photographer's words; recorded on the manifest and copied
+    // onto every photo it brings in.
+    description: Option<&str>,
 ) -> anyhow::Result<ImportReport> {
     let preset = if render && (cfg.outputs.exr || cfg.outputs.jpeg) {
         match resolve_preset(&cfg.preset).and_then(|p| Preset::load(&p)) {
@@ -91,6 +94,7 @@ pub fn run_import(
     };
 
     let mut manifest = Manifest::new(cfg, &scan.source.label, &scan.source.root, preset.as_ref().map(|p| p.record()));
+    manifest.description = description.map(str::to_string).filter(|d| !d.trim().is_empty());
 
     // ---- copy phase ----
     let to_copy: Vec<&crate::plan::PlannedFile> =

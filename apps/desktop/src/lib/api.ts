@@ -29,6 +29,17 @@ export interface GroupView {
   known_at: string | null;
 }
 
+/** A numbered run of images that belong together. */
+export interface SeqGroup {
+  pattern: string;
+  frames: number;
+  first: number;
+  last: number;
+  missing: number[];
+  members: number[];
+  bytes: number;
+}
+
 export interface ScanView {
   source: SourceInfo;
   groups: GroupView[];
@@ -38,6 +49,7 @@ export interface ScanView {
   /** Copies found inside the scan, and photos the catalog already holds. */
   copies: number;
   already_held: number;
+  sequences: SeqGroup[];
 }
 
 export type DestStatus =
@@ -418,6 +430,8 @@ export const catalog = {
     invoke<number>("catalog_save_collection", { name, filter, sort }),
   deleteCollection: (id: number) => invoke<void>("catalog_delete_collection", { id }),
   thumbsFromPrints: () => invoke<boolean>("catalog_thumbs_from_prints"),
+  getSetting: (key: string) => invoke<string | null>("catalog_get_setting", { key }),
+  setSetting: (key: string, on: boolean) => invoke<void>("catalog_set_setting", { key, value: on ? "1" : "0" }),
   setThumbsFromPrints: (on: boolean) => invoke<void>("catalog_set_thumbs_from_prints", { on }),
   thumbData: (id: number) => invoke<string | null>("catalog_thumb_data", { id }),
   tag: (ids: number[], add: string[], remove: string[]) => invoke<void>("catalog_tag", { ids, add, remove }),
@@ -452,6 +466,8 @@ export const api = {
   getConfig: () => invoke<Config>("get_config"),
   setConfig: (config: Config) => invoke<void>("set_config", { config }),
   defaultTemplates: () => invoke<Templates>("default_templates"),
+  setImportDescription: (text: string) => invoke<void>("set_import_description", { text }),
+  getImportDescription: () => invoke<string | null>("get_import_description"),
   validateTemplate: (template: string) => invoke<string[]>("validate_template", { template }),
   listPresets: () => invoke<PresetSummary[]>("list_presets"),
   startScan: (path: string) => invoke<void>("start_scan", { path }),
@@ -585,6 +601,13 @@ export const looks = {
   developPreview: (id: number, raw: RawSettings, maxPx: number) => invoke<string>("develop_preview", { id, raw, maxPx }),
   previewBefore: (id: number, preset: Look, raw: RawSettings, maxPx: number) =>
     invoke<string>("look_preview_before", { id, preset, raw, maxPx }),
+  /** Render a clip through a look; progress arrives as `video-progress`. */
+  videoRender: (
+    asset: number,
+    req: { src: string; dst: string; codec: string; look: string; max_px: number; mbps: number; audio: boolean },
+    preset: Look | null,
+  ) => invoke<{ frames: number; seconds: number; width: number; height: number; silent: boolean }>("video_render", { asset, req, preset }),
+  exportCube: (preset: Look, path: string, size: number) => invoke<string>("look_export_cube", { preset, path, size }),
   rawGet: (id: number) => invoke<RawSettings>("asset_raw_get", { id }),
   rawSet: (ids: number[], raw: RawSettings) => invoke<void>("asset_raw_set", { ids, raw }),
 };

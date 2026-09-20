@@ -10,6 +10,7 @@
   let saved = $state(false);
   let catInfo = $state<CatalogInfo | null>(null);
   let fromPrints = $state(false);
+  let hevcThumbs = $state(true);
   let hasKey = $state(false);
   let keyInput = $state("");
   let keyMsg = $state<string | null>(null);
@@ -21,6 +22,7 @@
     info = await api.info();
     catInfo = await catalog.info().catch(() => null);
     fromPrints = await catalog.thumbsFromPrints().catch(() => false);
+    hevcThumbs = await catalog.getSetting("video_thumbs_hevc").then((v) => v !== "0").catch(() => true);
     hasKey = !!(await catalog.aiKey().catch(() => null));
   });
 
@@ -187,6 +189,18 @@
             }}
           />
           Show prints in the library — a photo's thumbnail comes from its newest print instead of the camera rendition. Affected thumbnails are made again as you scroll.
+        </label>
+        <label class="row small">
+          <input
+            type="checkbox"
+            checked={hevcThumbs}
+            onchange={async (e) => {
+              hevcThumbs = (e.currentTarget as HTMLInputElement).checked;
+              await catalog.setSetting("video_thumbs_hevc", hevcThumbs);
+            }}
+          />
+          Poster frames for HEVC video — decoding H.265 is several times the work of H.264 and often without hardware help, so a library full of it
+          can be left without thumbnails.
         </label>
       </div>
     {/if}

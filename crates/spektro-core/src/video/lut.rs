@@ -111,6 +111,13 @@ pub fn bake(pipeline: &Pipeline, backend: &dyn spektrafilm_gpu::ComputeBackend, 
     Ok(Cube { size, data: cube })
 }
 
+/// Bake a preset straight to a cube, picking the backend for the caller.
+pub fn bake_preset(preset: &Preset, data_dir: &Path, size: usize) -> anyhow::Result<Cube> {
+    let backend = spektrafilm_gpu::select_backend();
+    let pipeline = pipeline_for(preset, data_dir, None)?;
+    bake(&pipeline, backend.as_ref(), size)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

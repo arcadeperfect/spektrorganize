@@ -5,6 +5,7 @@
   // and print stages render their own.
   import { catalog, api, duration as durationText, looks as looksApi, type RenderInfo } from "../../api";
   import { library as lib } from "../../library.svelte";
+  import VideoExport from "./VideoExport.svelte";
   import { develop } from "../../photo.svelte";
   import { store } from "../../state.svelte";
   import { panzoom } from "../../panzoom";
@@ -83,6 +84,7 @@
 
   /** The video file behind a clip, for the player. */
   let clip = $state<number | null>(null);
+  let rendering = $state(false);
   let player = $state<HTMLVideoElement | undefined>();
 
   async function loadClip(id: number) {
@@ -238,6 +240,10 @@
 
 <svelte:window onkeydown={onKey} />
 
+{#if rendering && asset}
+  <VideoExport {asset} onclose={() => (rendering = false)} />
+{/if}
+
 <div class="loupe">
   <div class="bar row spread">
     <div class="row">
@@ -272,6 +278,9 @@
       <button onclick={() => openStage("develop")} title="Develop this photo (D)">Develop…</button>
       <button onclick={() => openStage("print")} title="Print look for this photo (P)">Print look…</button>
       <button onclick={() => asset && lib.queueAdd([asset.id])} title="Add to the export queue (Q)">Queue</button>
+      {#if asset?.kind === "video"}
+        <button onclick={() => (rendering = true)} title="Render this clip through a look">Render…</button>
+      {/if}
       <button onclick={() => asset && lib.askExport([asset.id])} title="Export this photo (E)">Export…</button>
       <button class:on={full} disabled={fullBusy} onclick={showFull} title="Decode the file at its own resolution (F)">
         {fullBusy ? "decoding…" : full ? "full res" : "Full res"}

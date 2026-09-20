@@ -45,6 +45,15 @@
     changed();
   }
 
+  /** What this import is, kept on every photo it brings in. */
+  let description = $state("");
+  let descLoaded = false;
+  $effect(() => {
+    if (descLoaded) return;
+    descLoaded = true;
+    api.getImportDescription().then((d) => (description = d ?? ""));
+  });
+
   const LEFT = 420;
   let leftW = $state(paneWidth("layout.left", LEFT));
 
@@ -119,6 +128,24 @@
             </div>
           </div>
         {/each}
+      </div>
+
+      <div class="card stack">
+        <h2>This import</h2>
+        <p class="muted small">
+          A note about what these photos are — a shoot, a trip, a roll. It is written into the import's manifest and onto every photo it brings in,
+          so it survives the card and the file names.
+        </p>
+        <input
+          type="text"
+          placeholder="e.g. Sam and Ana's wedding, second camera"
+          value={description}
+          oninput={(e) => {
+            description = (e.currentTarget as HTMLInputElement).value;
+            api.setImportDescription(description);
+          }}
+          spellcheck="true"
+        />
       </div>
 
       <div class="card stack">

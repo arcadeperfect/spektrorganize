@@ -114,6 +114,47 @@ frame, so there are never empty corners, and the crop is a fraction of what is l
 on the photo, with Free / Original / 1:1 / 3:2 / 2:3 / 4:3 / 3:4 / 16:9 to hold a shape. While
 the crop tool is open the preview shows the whole frame; closing it shows the crop.
 
+## Video
+
+macOS only, through AVFoundation: the system decodes and encodes, so there is no bundled codec,
+no HEVC licensing question, and hardware acceleration where the machine has it. On other
+platforms the calls return `Unsupported` and the app builds without video.
+
+Clips get poster frames, duration, size, codec and the container's own creation date. HEVC poster
+frames can be turned off (Settings → Catalog) for libraries where decoding H.265 is not worth it.
+Playback streams over a `clip://` protocol the app serves itself, by catalog file id and with
+byte ranges, because the webview cannot read the archive and widening its file access would be
+worse.
+
+**Rendering a look onto a clip** (Render… in the full-screen view) comes two ways:
+
+- **Baked LUT** — the preset is run once over a colour cube and applied per frame. Fast enough
+  for a whole clip, and the cube exports as `.cube` for Resolve. It cannot carry grain or
+  halation: those are spatial, and a cube maps colour to colour.
+- **Full pipeline** — spektrafilm on every frame, grain and all. Slower, and the honest one.
+
+Either way the exposure is metered once on a reference frame and held for the clip; metering each
+frame separately makes the picture pump as the scene changes. Output is H.264 or HEVC in MP4, or
+ProRes 422/4444 in a QuickTime movie, at the clip's size or capped for posting.
+
+Known gap: **rendered clips are silent.** An AVAssetWriter interleaves its inputs and every
+arrangement tried so far ends with one input waiting on the other, so rather than ship a hang the
+renderer reports `silent`.
+
+## Image sequences
+
+A folder of `render_0001.png … render_0480.png` is one shot, not 480 photos. The import review
+collapses numbered runs (via the [`sequitur`](https://crates.io/crates/sequitur) crate) into one
+row each, showing the pattern, the frame count and any gaps; four numbered files is the floor, so
+`DSCF0001..0003` stays three photos. Collapsing is only how the review reads — every frame is
+still imported, and one click includes or excludes the whole run.
+
+## Import descriptions
+
+The Layout screen has a note for what an import is — a shoot, a trip, a roll. It goes into the
+manifest and onto every photo the import brings in, so it survives the card, the folder names and
+any later re-organisation.
+
 ## Duplicates on import
 
 A scan checks itself and the library before anything is copied. Photos that are byte-identical to
