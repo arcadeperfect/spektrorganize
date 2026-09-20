@@ -24,6 +24,15 @@ use std::time::Duration;
 pub const SMALL: u32 = 256;
 pub const LARGE: u32 = 1024;
 
+/// A catalog-wide yes/no preference.
+fn setting_on(conn: &Connection, key: &str, default: bool) -> bool {
+    use rusqlite::OptionalExtension as _;
+    match conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get::<_, String>(0)).optional() {
+        Ok(Some(v)) => v == "1",
+        _ => default,
+    }
+}
+
 pub fn thumb_path(dir: &Path, asset: i64, size: u32) -> PathBuf {
     dir.join(size.to_string()).join((asset / 1000).to_string()).join(format!("{asset}.jpg"))
 }
@@ -43,6 +52,7 @@ fn source_str(s: PreviewSource) -> &'static str {
         PreviewSource::SidecarJpeg => "sidecar_jpeg",
         PreviewSource::EmbeddedPreview => "embedded_preview",
         PreviewSource::Itself => "itself",
+        PreviewSource::VideoFrame => "video_frame",
         PreviewSource::None => "none",
     }
 }
@@ -61,13 +71,7 @@ struct Candidate {
 /// thumbnails are redone too (e.g. the cache was cleared). Files on offline roots are skipped.
 pub fn jobs(conn: &Connection, dir: &Path, ids: Option<&[i64]>, size: u32, force: bool) -> anyhow::Result<Vec<ThumbJob>> {
     fn prefer_prints(conn: &Connection) -> bool {
-        use rusqlite::OptionalExtension as _;
-        conn.query_row("SELECT value FROM settings WHERE key = 'thumbs_from_prints'", [], |r| r.get::<_, String>(0))
-            .optional()
-            .ok()
-            .flatten()
-            .as_deref()
-            == Some("1")
+        setting_on(conn, "thumbs_from_prints", false)
     }
 
     /// The most recent JPEG print of each asset, on an online root.
@@ -117,7 +121,7 @@ pub fn jobs(conn: &Connection, dir: &Path, ids: Option<&[i64]>, size: u32, force
     let mut order: Vec<i64> = Vec::new();
     let base = "SELECT a.id, af.role, f.id, r.path, f.rel, f.size, f.mtime_ns, f.missing = 0 AND r.online = 1
                 FROM assets a JOIN asset_files af ON af.asset_id = a.id JOIN files f ON f.id = af.file_id JOIN roots r ON r.id = f.root_id
-                WHERE a.kind IN ('raw', 'image') AND af.role IN ('raw', 'jpeg', 'image')";
+                WHERE a.kind IN ('raw', 'image', 'video') AND af.role IN ('raw', 'jpeg', 'image', 'video')";
     let mut collect = |sql: &str, p: Vec<rusqlite::types::Value>| -> anyhow::Result<()> {
         let mut stmt = conn.prepare(sql)?;
         let mut rows = stmt.query(rusqlite::params_from_iter(p))?;
@@ -153,6 +157,15 @@ pub fn jobs(conn: &Connection, dir: &Path, ids: Option<&[i64]>, size: u32, force
         }
     }
 
+    // Videos encoded with HEVC, and whether their posters are wanted at all.
+    let hevc_ok = setting_on(conn, "video_thumbs_hevc", true);
+    let hevc: std::collections::HashSet<i64> = if hevc_ok {
+        std::collections::HashSet::new()
+    } else {
+        let mut stmt = conn.prepare("SELECT id FROM assets WHERE codec IN ('hvc1', 'hev1', 'dvh1', 'dvhe')")?;
+        stmt.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?
+    };
+
     // With `thumbs_from_prints`, the newest JPEG print stands in for the camera rendition.
     let prints: HashMap<i64, Candidate> = if prefer_prints(conn) { newest_prints(conn, ids)? } else { HashMap::new() };
 
@@ -170,7 +183,16 @@ pub fn jobs(conn: &Connection, dir: &Path, ids: Option<&[i64]>, size: u32, force
             .map(|p| (p, PreviewSource::Itself))
             .or_else(|| files.iter().find(|f| f.role == "jpeg" && f.usable).map(|f| (f, PreviewSource::SidecarJpeg)))
             .or_else(|| files.iter().find(|f| f.role == "raw" && f.usable).map(|f| (f, PreviewSource::EmbeddedPreview)))
-            .or_else(|| files.iter().find(|f| f.role == "image" && f.usable).map(|f| (f, PreviewSource::Itself)));
+            .or_else(|| files.iter().find(|f| f.role == "image" && f.usable).map(|f| (f, PreviewSource::Itself)))
+            .or_else(|| files.iter().find(|f| f.role == "video" && f.usable).map(|f| (f, PreviewSource::VideoFrame)));
+        // HEVC decodes several times slower than H.264 and often without hardware help, so a
+        // library full of it can be left alone.
+        if let Some((_, PreviewSource::VideoFrame)) = pick
+            && !hevc_ok
+            && hevc.contains(&asset)
+        {
+            continue;
+        }
         let Some((f, source)) = pick else { continue };
         let key = format!("{}:{}:{}:{}", f.role, f.file, f.size, f.mtime.unwrap_or(0));
         if !force && existing.get(&asset) == Some(&key) {
@@ -388,9 +410,10 @@ mod tests {
         let dir = tmp.path().join("thumbs");
 
         let todo = jobs(cat.conn(), &dir, None, SMALL, false).unwrap();
-        assert_eq!(todo.len(), 3, "videos have no thumbnail job");
+        assert_eq!(todo.len(), 4, "the two photos, the broken one, and the clip's poster frame");
         let (made, failed) = generate_all(&cat, &todo, |_, _| {}).unwrap();
-        assert_eq!((made, failed), (2, 1));
+        // The "video" here is four bytes of text, so its poster fails like the broken JPEG does.
+        assert_eq!((made, failed), (2, 2));
         assert!(jobs(cat.conn(), &dir, None, SMALL, false).unwrap().is_empty(), "failures are negative-cached");
         let page = cat.list(&Default::default(), Default::default(), 0, 10).unwrap();
         let one = page.items.iter().find(|a| a.name == "one.jpg").unwrap();

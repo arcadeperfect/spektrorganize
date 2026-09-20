@@ -160,8 +160,14 @@ CREATE TABLE collections (
 );
 "#;
 
+/// v7: what a video is — how long it runs and what it is encoded with.
+const V7: &str = r#"
+ALTER TABLE assets ADD COLUMN duration REAL;   -- seconds, videos only
+ALTER TABLE assets ADD COLUMN codec TEXT;      -- four-character code, e.g. hvc1 / avc1
+"#;
+
 /// Every migration, in order. `user_version` = how many have been applied.
-pub(crate) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6];
+pub(crate) const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7];
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 

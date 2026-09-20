@@ -3,7 +3,7 @@
   // the current listing, Blender navigation for zoom and pan, and the two
   // stages a step away. Shows the largest preview the catalog has; the develop
   // and print stages render their own.
-  import { catalog, api, looks as looksApi, type RenderInfo } from "../../api";
+  import { catalog, api, duration as durationText, looks as looksApi, type RenderInfo } from "../../api";
   import { library as lib } from "../../library.svelte";
   import { develop } from "../../photo.svelte";
   import { store } from "../../state.svelte";
@@ -55,6 +55,8 @@
     full = false;
     if (a.renders) loadPrints(a.id);
     else ((prints = []), (shown = -1));
+    if (a.kind === "video") loadClip(a.id);
+    else clip = null;
     load(a.id).then((p) => {
       if (lib.item(index)?.id === a.id) src = p ? api.fileUrl(p) : null;
     });
@@ -78,6 +80,21 @@
    */
   let prints = $state<RenderInfo[]>([]);
   let shown = $state(-1);
+
+  /** The video file behind a clip, for the player. */
+  let clip = $state<number | null>(null);
+  let player = $state<HTMLVideoElement | undefined>();
+
+  async function loadClip(id: number) {
+    clip = null;
+    try {
+      const d = await catalog.asset(id);
+      const f = d.files.find((x) => x.kind === "video") ?? d.files[0];
+      if (f && lib.item(index)?.id === id) clip = f.id;
+    } catch {
+      // Without the file id there is nothing to play; the poster frame still shows.
+    }
+  }
 
   async function loadPrints(id: number) {
     prints = [];
@@ -168,9 +185,19 @@
       return;
     }
     switch (e.key) {
+      case " ":
+        // On a clip, space is play/pause — the usual meaning — and Esc still closes.
+        if (player) {
+          e.preventDefault();
+          if (player.paused) player.play();
+          else player.pause();
+          break;
+        }
+        e.preventDefault();
+        close();
+        break;
       case "Escape":
       case "Enter":
-      case " ":
         e.preventDefault();
         close();
         break;
@@ -217,6 +244,7 @@
       <button class="ghost" onclick={close} title="Back to the grid (space or Esc)">← Grid</button>
       <span class="name">{asset?.name ?? ""}</span>
       <span class="muted small">{index + 1} / {lib.total}</span>
+      {#if asset?.duration}<span class="muted small mono">{durationText(asset.duration)}</span>{/if}
       {#if prints.length}
         <span class="versions" title="[ and ] step through the prints">
           <button class:on={shown === -1} onclick={() => show(-1)}>camera</button>
@@ -262,10 +290,15 @@
     }}
   >
     <div class="view">
-      {#if src}
+      {#if asset?.kind === "video"}
+        {#if clip !== null}
+          <!-- svelte-ignore a11y_media_has_caption -->
+          <video bind:this={player} src={catalog.clipUrl(clip)} poster={src ?? undefined} controls autoplay playsinline></video>
+        {:else}
+          <span class="muted">Opening the clip…</span>
+        {/if}
+      {:else if src}
         <img src={src} alt={asset?.name ?? ""} />
-      {:else if asset?.kind === "video"}
-        <span class="muted">No preview for videos yet.</span>
       {:else}
         <span class="muted">Loading…</span>
       {/if}
@@ -338,7 +371,8 @@
     align-items: center;
     justify-content: center;
   }
-  .view img {
+  .view img,
+  .view video {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;

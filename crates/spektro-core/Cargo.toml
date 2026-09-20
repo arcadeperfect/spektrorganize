@@ -16,6 +16,14 @@ chrono.workspace = true
 blake3.workspace = true
 rayon.workspace = true
 trash.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-av-foundation.workspace = true
+objc2-core-media.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-graphics.workspace = true
 walkdir.workspace = true
 tracing.workspace = true
 crossbeam-channel.workspace = true

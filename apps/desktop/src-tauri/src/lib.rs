@@ -454,10 +454,81 @@ fn open_path(path: String) -> Result<()> {
     Ok(())
 }
 
+/// One chunk of a clip, by catalog file id. Ranges are served as 206 so the player can seek
+/// without pulling the whole file.
+fn serve_clip(app: &AppHandle, path: &str, range: Option<&str>) -> tauri::http::Response<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    use tauri::http::{Response, StatusCode, header};
+
+    let fail = |code: StatusCode| Response::builder().status(code).body(Vec::new()).unwrap();
+    let Ok(id) = path.trim_matches('/').parse::<i64>() else { return fail(StatusCode::BAD_REQUEST) };
+
+    let file = {
+        let st = app.state::<catalog::CatalogState>();
+        let db = st.db.lock().unwrap();
+        match db.file_path(id) {
+            Ok(Some(p)) => p,
+            _ => return fail(StatusCode::NOT_FOUND),
+        }
+    };
+    let Ok(mut f) = std::fs::File::open(&file) else { return fail(StatusCode::NOT_FOUND) };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mime = match file.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+        Some("mov") => "video/quicktime",
+        Some("m4v") => "video/x-m4v",
+        Some("avi") => "video/x-msvideo",
+        Some("mts") | Some("m2ts") => "video/mp2t",
+        _ => "video/mp4",
+    };
+
+    // "bytes=start-end", either end optional. Anything else is treated as the whole file.
+    let (start, end) = match range.and_then(|r| r.strip_prefix("bytes=")).map(|r| {
+        let (a, b) = r.split_once('-').unwrap_or((r, ""));
+        (a.parse::<u64>().unwrap_or(0), b.parse::<u64>().ok())
+    }) {
+        Some((s, e)) => {
+            // A couple of megabytes at a time: enough to keep playing, small enough to seek.
+            const CHUNK: u64 = 2 * 1024 * 1024;
+            let end = e.unwrap_or_else(|| (s + CHUNK - 1).min(len.saturating_sub(1)));
+            (s.min(len), end.min(len.saturating_sub(1)))
+        }
+        None => (0, len.saturating_sub(1)),
+    };
+    if len == 0 || start > end {
+        return fail(StatusCode::RANGE_NOT_SATISFIABLE);
+    }
+
+    let mut buf = vec![0u8; (end - start + 1) as usize];
+    if f.seek(SeekFrom::Start(start)).is_err() || f.read_exact(&mut buf).is_err() {
+        return fail(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    let partial = range.is_some();
+    Response::builder()
+        .status(if partial { StatusCode::PARTIAL_CONTENT } else { StatusCode::OK })
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, buf.len().to_string())
+        .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
+        .header("Access-Control-Allow-Origin", "*")
+        .body(buf)
+        .unwrap()
+}
+
 pub fn run() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Clips are wherever the user keeps them, which the webview cannot read. This serves
+        // them by catalog file id, with byte ranges so the player can seek, and it will only
+        // ever open a path the catalog already knows about.
+        .register_asynchronous_uri_scheme_protocol("clip", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let uri = request.uri().clone();
+            let range = request.headers().get(tauri::http::header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_owned);
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(serve_clip(&app, uri.path(), range.as_deref()));
+            });
+        })
         .setup(|app| {
             let config_path = default_config_path();
             let config = if config_path.exists() { Config::load(&config_path).unwrap_or_default() } else { Config::default() };

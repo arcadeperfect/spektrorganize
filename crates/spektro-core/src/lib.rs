@@ -18,4 +18,5 @@ pub mod meta;
 pub mod plan;
 pub mod preview;
 pub mod scan;
+pub mod video;
 pub mod template;

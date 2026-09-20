@@ -179,8 +179,16 @@
 
 <style>
   .head {
-    margin-bottom: 10px;
+    /* Stays put while the photos scroll under it. The negative margins let its
+       background cover the page gutter, so nothing shows through at the sides. */
+    position: sticky;
+    top: -18px;
+    z-index: 5;
     align-items: flex-start;
+    margin: -18px -22px 10px;
+    padding: 14px 22px 8px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
   }
   .seg {
     display: inline-flex;

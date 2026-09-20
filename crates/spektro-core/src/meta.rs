@@ -14,6 +14,8 @@ pub enum MetaSource {
     Raw,
     /// EXIF from a JPEG/HEIF.
     Exif,
+    /// The creation date a video container records.
+    Container,
     /// File modification time only.
     Mtime,
 }

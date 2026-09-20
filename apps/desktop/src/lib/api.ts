@@ -185,6 +185,8 @@ export interface AssetSummary {
   camera: string | null;
   rating: number;
   flag: string;
+  /** Videos: how long the clip runs, in seconds. */
+  duration: number | null;
   width: number | null;
   height: number | null;
   files: number;
@@ -379,6 +381,13 @@ export interface CatalogInfo {
   schema: number;
 }
 
+/** How long a clip runs, as 4:07 or 1:02:03. */
+export function duration(secs: number): string {
+  const t = Math.max(0, Math.round(secs));
+  const [h, m, s] = [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60];
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export const catalog = {
   info: () => invoke<CatalogInfo>("catalog_info"),
   facets: () => invoke<Facets>("catalog_facets"),
@@ -396,6 +405,8 @@ export const catalog = {
   requestThumbs: (ids: number[], force = false) => invoke<ThumbReady[]>("catalog_request_thumbs", { ids, force }),
   preview: (id: number) => invoke<string | null>("catalog_preview", { id }),
   previewPx: (id: number, maxPx: number) => invoke<string | null>("catalog_preview_px", { id, maxPx }),
+  /** A clip, streamed by the app so the player can seek without the file being web-readable. */
+  clipUrl: (fileId: number) => `clip://localhost/${fileId}`,
   renderPreview: (render: number, maxPx: number) => invoke<string | null>("catalog_render_preview", { render, maxPx }),
   findDuplicates: (scope?: DupScope) => invoke<DupScan>("catalog_find_duplicates", { scope: scope ?? null }),
   doomedFiles: (ids: number[]) => invoke<DoomedFile[]>("catalog_doomed_files", { ids }),

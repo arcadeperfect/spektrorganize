@@ -64,11 +64,31 @@ pub struct IndexReport {
 pub struct FileMeta {
     pub meta: CaptureMeta,
     pub dims: Option<(u32, u32)>,
+    /// Videos: how long it runs, and what it is encoded with.
+    pub duration: Option<f64>,
+    pub codec: Option<String>,
+}
+
+/// A video container's creation date, which comes in a few shapes.
+fn parse_video_date(s: &str) -> Option<chrono::NaiveDateTime> {
+    use chrono::{DateTime, NaiveDateTime};
+    let s = s.trim();
+    if let Ok(t) = DateTime::parse_from_rfc3339(s) {
+        return Some(t.naive_local());
+    }
+    for f in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S", "%Y:%m:%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"] {
+        if let Ok(t) = NaiveDateTime::parse_from_str(s, f) {
+            return Some(t);
+        }
+    }
+    None
 }
 
 /// Read what the catalog stores about a photo/video: LibRaw header parse for RAWs, EXIF for
 /// images, the mtime for everything else.
 pub fn read_file_meta(path: &Path, kind: Kind) -> FileMeta {
+    let mut duration = None;
+    let mut codec = None;
     let (meta, dims) = match kind {
         Kind::Raw => match RawFile::open(path) {
             Ok(r) => {
@@ -84,6 +104,21 @@ pub fn read_file_meta(path: &Path, kind: Kind) -> FileMeta {
                 .and_then(|r| r.into_dimensions().ok());
             (CaptureMeta::from_exif(path), dims)
         }
+        Kind::Video => match crate::video::probe(path) {
+            // The container's own creation date beats the file's mtime, which is whenever it
+            // was last copied about.
+            Ok(v) => {
+                duration = Some(v.duration);
+                codec = Some(v.codec.clone());
+                let mut meta = CaptureMeta::from_mtime(path);
+                if let Some(t) = v.created.as_deref().and_then(parse_video_date) {
+                    meta.captured_at = Some(t);
+                    meta.source = MetaSource::Container;
+                }
+                (meta, (v.width > 0 && v.height > 0).then_some((v.width, v.height)))
+            }
+            Err(_) => (CaptureMeta::from_mtime(path), None),
+        },
         _ => (CaptureMeta::from_mtime(path), None),
     };
     // Quarter-turn orientations display with width and height swapped.
@@ -91,7 +126,7 @@ pub fn read_file_meta(path: &Path, kind: Kind) -> FileMeta {
         Some(5..=8) => dims.map(|(w, h)| (h, w)),
         _ => dims,
     };
-    FileMeta { meta, dims }
+    FileMeta { meta, dims, duration, codec }
 }
 
 // ---------- folders ----------
@@ -476,7 +511,8 @@ fn set_primary(tx: &Connection, asset: i64, file_id: i64, kind: Kind, fm: &FileM
     let m = &fm.meta;
     tx.prepare_cached(
         "UPDATE assets SET kind = ?2, primary_file_id = ?3, captured_at = ?4, make = ?5, model = ?6, camera = ?7, lens = ?8,
-                iso = ?9, width = ?10, height = ?11, orientation = ?12, meta_source = ?13 WHERE id = ?1",
+                iso = ?9, width = ?10, height = ?11, orientation = ?12, meta_source = ?13,
+                duration = ?14, codec = ?15 WHERE id = ?1",
     )?
     .execute(params![
         asset,
@@ -492,6 +528,8 @@ fn set_primary(tx: &Connection, asset: i64, file_id: i64, kind: Kind, fm: &FileM
         fm.dims.map(|d| d.1),
         m.orientation,
         meta_source_str(m.source),
+        fm.duration,
+        fm.codec.as_deref(),
     ])?;
     Ok(())
 }
@@ -500,6 +538,7 @@ fn meta_source_str(s: MetaSource) -> &'static str {
     match s {
         MetaSource::Raw => "raw",
         MetaSource::Exif => "exif",
+        MetaSource::Container => "container",
         MetaSource::Mtime => "mtime",
     }
 }
@@ -694,7 +733,7 @@ pub fn index_manifest(cat: &mut Catalog, manifest_path: &Path, m: &Manifest) -> 
                 report.missing_files += 1;
             }
             if e.is_primary {
-                primary_meta = Some(FileMeta { meta: tidy_meta(&e.meta), dims: None });
+                primary_meta = Some(FileMeta { meta: tidy_meta(&e.meta), dims: None, duration: None, codec: None });
             }
             members.push(Member { file_id, role: Role::for_file(&name, e.kind, e.is_primary), kind: e.kind, is_primary: e.is_primary });
         }
@@ -702,7 +741,7 @@ pub fn index_manifest(cat: &mut Catalog, manifest_path: &Path, m: &Manifest) -> 
         if !is_asset_kind(primary.kind) {
             continue;
         }
-        let meta = primary_meta.unwrap_or_else(|| FileMeta { meta: tidy_meta(&entries[0].meta), dims: None });
+        let meta = primary_meta.unwrap_or_else(|| FileMeta { meta: tidy_meta(&entries[0].meta), dims: None, duration: None, codec: None });
         let asset = link_group(&tx, &members, false, Some(import_id), || meta, &mut counters)?;
         report.assets += 1;
         report.touched_assets.push(asset);

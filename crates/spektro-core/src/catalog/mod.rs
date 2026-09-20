@@ -423,6 +423,23 @@ impl Catalog {
         Ok(())
     }
 
+    /// Where one file lives, by its catalog id.
+    pub fn file_path(&self, file_id: i64) -> anyhow::Result<Option<std::path::PathBuf>> {
+        use rusqlite::OptionalExtension as _;
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT r.path, f.rel FROM files f JOIN roots r ON r.id = f.root_id WHERE f.id = ?1",
+                [file_id],
+                |row| {
+                    let root: String = row.get(0)?;
+                    let rel: String = row.get(1)?;
+                    Ok(std::path::Path::new(&root).join(rel))
+                },
+            )
+            .optional()?)
+    }
+
     /// Where a render lives, and whether its root is online.
     pub fn render_path(&self, render: i64) -> anyhow::Result<Option<(std::path::PathBuf, bool)>> {
         use rusqlite::OptionalExtension as _;

@@ -4,7 +4,7 @@
   // geometry, updated on scroll and resize events (no IntersectionObserver / rAF, which stop
   // firing in a window that isn't compositing).
   import { onMount, untrack } from "svelte";
-  import { api, type AssetSummary } from "../../api";
+  import { api, duration as durationText, type AssetSummary } from "../../api";
   import { library as lib } from "../../library.svelte";
 
   const GAP = 6;
@@ -191,7 +191,7 @@
               <div class="img" style="height: {cell}px">
                 {#if t}
                   <img src={api.fileUrl(t)} alt="" draggable="false" onerror={() => lib.thumbBroken(a.id)} />
-                {:else if t === null || a.kind === "video"}
+                {:else if t === null}
                   <span class="ph">{a.kind === "video" ? "▶ video" : "no preview"}</span>
                 {:else}
                   <span class="ph pending"></span>
@@ -211,6 +211,9 @@
                   <span class="flag warn">offline</span>
                 {/if}
                 {#if a.flag}<span class="mark {a.flag}" title={a.flag === "select" ? "Selected (S)" : "Rejected (R)"}>{a.flag === "select" ? "✓" : "✕"}</span>{/if}
+                {#if a.kind === "video"}
+                  <span class="clip">▶{a.duration ? ` ${durationText(a.duration)}` : ""}</span>
+                {/if}
                 {#if a.rating}<span class="hearts">{"♥".repeat(a.rating)}</span>{/if}
               </div>
               <div class="cap">
@@ -323,6 +326,16 @@
     padding: 0 5px;
     border-radius: 3px;
     background: rgba(20, 18, 17, 0.85);
+  }
+  .clip {
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    font-size: 9.5px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: rgba(20, 18, 17, 0.85);
+    color: #d8d0c8;
   }
   .hearts {
     position: absolute;

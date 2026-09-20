@@ -80,6 +80,11 @@ pub fn make_thumbnails(src: &Path, source: PreviewSource, outs: &[(u32, &Path)])
                 None => return Ok(None),
             }
         }
+        PreviewSource::VideoFrame => {
+            let (rgb, w, h) = crate::video::frame_rgb8(src, video_poster_time(src), largest_px).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let buf = image::RgbImage::from_raw(w, h, rgb).ok_or_else(|| anyhow::anyhow!("frame size mismatch"))?;
+            DynamicImage::ImageRgb8(buf)
+        }
         PreviewSource::None => return Ok(None),
     };
 
@@ -93,6 +98,11 @@ pub fn make_thumbnails(src: &Path, source: PreviewSource, outs: &[(u32, &Path)])
         write_jpeg(&current, out)?;
     }
     Ok(Some(dims))
+}
+
+/// A little way into the clip, so the poster is not the black frame at the head.
+fn video_poster_time(src: &Path) -> f64 {
+    crate::video::probe(src).map(|m| (m.duration * 0.1).min(2.0)).unwrap_or(0.0)
 }
 
 fn shrink(img: DynamicImage, max_px: u32) -> DynamicImage {

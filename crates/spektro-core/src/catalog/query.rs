@@ -68,6 +68,8 @@ pub struct AssetSummary {
     pub rating: i64,
     /// "select", "reject", or empty.
     pub flag: String,
+    /// Videos: how long the clip runs, in seconds.
+    pub duration: Option<f64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
     /// Number of files (RAW + JPEG = 2).
@@ -210,7 +212,7 @@ impl Catalog {
         let total = self.count(f)?;
         let (w, mut p) = where_clause(f);
         let sql = format!(
-            "SELECT a.id, a.kind, COALESCE(f.name, ''), a.captured_at, a.camera, a.rating, COALESCE(a.flag, ''), a.width, a.height,
+            "SELECT a.id, a.kind, COALESCE(f.name, ''), a.captured_at, a.camera, a.rating, COALESCE(a.flag, ''), a.duration, a.width, a.height,
                     (SELECT COUNT(*) FROM asset_files af WHERE af.asset_id = a.id),
                     EXISTS (SELECT 1 FROM asset_files af WHERE af.asset_id = a.id AND af.role = 'jpeg'),
                     (SELECT COUNT(*) FROM renders rr WHERE rr.asset_id = a.id),
@@ -233,16 +235,17 @@ impl Catalog {
                     camera: r.get(4)?,
                     rating: r.get(5)?,
                     flag: r.get(6)?,
-                    width: r.get(7)?,
-                    height: r.get(8)?,
-                    files: r.get(9)?,
-                    has_jpeg: r.get(10)?,
-                    renders: r.get(11)?,
-                    ai_labelled: r.get(12)?,
-                    thumb: r.get(13)?,
-                    missing: r.get::<_, i64>(14)? != 0,
-                    online: r.get::<_, i64>(15)? != 0,
-                    root_id: r.get(16)?,
+                    duration: r.get(7)?,
+                    width: r.get(8)?,
+                    height: r.get(9)?,
+                    files: r.get(10)?,
+                    has_jpeg: r.get(11)?,
+                    renders: r.get(12)?,
+                    ai_labelled: r.get(13)?,
+                    thumb: r.get(14)?,
+                    missing: r.get::<_, i64>(15)? != 0,
+                    online: r.get::<_, i64>(16)? != 0,
+                    root_id: r.get(17)?,
                 })
             })?
             .collect::<Result<_, _>>()?;

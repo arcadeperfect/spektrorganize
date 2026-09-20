@@ -108,6 +108,8 @@ pub enum PreviewSource {
     EmbeddedPreview,
     /// The file itself is a viewable image.
     Itself,
+    /// A frame out of a video.
+    VideoFrame,
     None,
 }
 
