@@ -102,6 +102,51 @@ presets moved to the numpad (`Numpad 0` fit, `Numpad 1` 1:1) so the digits are f
 Ratings, flags and keywords live in the catalog database only — nothing is written to your photo
 files, and no XMP sidecars are produced yet.
 
+## Crop, rotate, straighten
+
+Part of develop, stored with the photo (`RawSettings`) and applied to the decoded linear image
+before the film stage, so a print is made from the frame you cropped. The photo file is never
+touched. Order is fixed: quarter turns, then the straighten angle, then the crop.
+
+Straightening trims to the largest rectangle of the original aspect that fits inside the rotated
+frame, so there are never empty corners, and the crop is a fraction of what is left. In Develop:
+⟲/⟳ for 90°, a straighten slider (double-click to level), and **crop** for the rectangle — drag
+on the photo, with Free / Original / 1:1 / 3:2 / 2:3 / 4:3 / 3:4 / 16:9 to hold a shape. While
+the crop tool is open the preview shows the whole frame; closing it shows the crop.
+
+## Duplicates on import
+
+A scan checks itself and the library before anything is copied. Photos that are byte-identical to
+another on the same card — a folder copied into its own sub-folder scans as two of everything —
+collapse to one: the copy nearest the top of the tree is imported, the rest are excluded and
+badged "copy on this card". Photos whose bytes the catalog already holds are badged "already in
+the library" and excluded too. One button puts them all back if you disagree.
+
+Only files that share a *name and size* with something else are read, so a card of new photos is
+checked for the price of one query.
+
+## Duplicates
+
+Sidebar → **Duplicates…** finds files that are identical byte for byte (same size, same BLAKE3)
+and nothing else, because that is the only case where removing a copy loses nothing. A RAW and
+its camera JPEG are different files and never appear. Hashes are computed only for files whose
+size collides with another's, so a library of unique photos finishes without reading anything.
+
+Pick the copy to keep per group; the rest go to the **Trash** (a "delete for good" switch skips
+it). Each purge is confirmed with the full paths first. Before a copy goes, its keywords, rating,
+flag and prints are merged onto the photo you keep, and a photo left with no files at all is
+dropped from the catalog. The backend refuses to remove a file that is not a verified copy of the
+one being kept, or to act at all when the keeper is not on disk — so it cannot take your last
+copy. This is the only part of the app that touches a photo on disk.
+
+## Purging rejects
+
+Sidebar → **Purge rejected…** shows every photo flagged ✕ as thumbnails, all chosen by default;
+click one to spare it. Both this and the duplicate purge end at the same screen: every path that
+will go, in full, next to the ones that stay, with a single button to do it. Trash by default, a
+"delete for good" switch beside it. Every file of a photo goes together — the RAW, its camera
+JPEG, its sidecars — and prints already made from it stay on disk.
+
 ## Dynamic catalogs
 
 A dynamic catalog is a saved filter, stored in the `collections` table (schema v6) and re-run

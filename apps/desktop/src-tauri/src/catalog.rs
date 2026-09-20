@@ -334,6 +334,76 @@ pub async fn catalog_render_preview(app: AppHandle, render: i64, max_px: u32) ->
     .map_err(err)?
 }
 
+// ---------- duplicates ----------
+
+/// Every group of byte-identical files. Hashing runs on a worker thread and reports progress.
+#[tauri::command]
+pub async fn catalog_find_duplicates(
+    app: AppHandle,
+    scope: Option<spektro_core::catalog::duplicates::DupScope>,
+) -> Result<spektro_core::catalog::duplicates::DupScan> {
+    let scope = scope.unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<CatalogState>();
+        let db = st.db.lock().unwrap();
+        db.find_duplicates(&scope, |done, total| {
+            let _ = app.emit("duplicates-progress", (done, total));
+        })
+        .map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// Keep one copy, remove the others. `delete` bypasses the trash; the default is recoverable.
+#[tauri::command]
+pub async fn catalog_purge_duplicates(
+    app: AppHandle,
+    keep: i64,
+    drop: Vec<i64>,
+    delete: bool,
+) -> Result<spektro_core::catalog::purge::PurgeReport> {
+    use spektro_core::catalog::purge::Removal;
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<CatalogState>();
+        let out = {
+            let db = st.db.lock().unwrap();
+            db.purge_duplicates(keep, &drop, if delete { Removal::Delete } else { Removal::Trash }).map_err(err)?
+        };
+        let _ = app.emit("catalog-changed", ());
+        Ok(out)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The files these photos are made of — shown for review before anything is removed.
+#[tauri::command]
+pub fn catalog_doomed_files(st: State<CatalogState>, ids: Vec<i64>) -> Result<Vec<spektro_core::catalog::purge::DoomedFile>> {
+    st.db.lock().unwrap().files_of_assets(&ids).map_err(err)
+}
+
+/// Remove whole photos: every file of each, then the photo itself.
+#[tauri::command]
+pub async fn catalog_purge_assets(
+    app: AppHandle,
+    ids: Vec<i64>,
+    delete: bool,
+) -> Result<spektro_core::catalog::purge::PurgeReport> {
+    use spektro_core::catalog::purge::Removal;
+    tauri::async_runtime::spawn_blocking(move || {
+        let st = app.state::<CatalogState>();
+        let out = {
+            let db = st.db.lock().unwrap();
+            db.purge_assets(&ids, if delete { Removal::Delete } else { Removal::Trash }).map_err(err)?
+        };
+        let _ = app.emit("catalog-changed", ());
+        Ok(out)
+    })
+    .await
+    .map_err(err)?
+}
+
 // ---------- dynamic catalogs ----------
 
 #[tauri::command]

@@ -23,6 +23,10 @@ export interface GroupView {
   lens: string | null;
   preview: PreviewSource;
   excluded: boolean;
+  /** This group is a copy of another in the same scan. */
+  copy_of: number | null;
+  /** The catalog already holds these bytes, at this path. */
+  known_at: string | null;
 }
 
 export interface ScanView {
@@ -31,6 +35,9 @@ export interface ScanView {
   files: number;
   bytes: number;
   errors: [string, string][];
+  /** Copies found inside the scan, and photos the catalog already holds. */
+  copies: number;
+  already_held: number;
 }
 
 export type DestStatus =
@@ -217,6 +224,64 @@ export interface Facets {
   roots: CatalogRoot[];
 }
 
+/** One file in a group of byte-identical files. */
+export interface DupFile {
+  file_id: number;
+  asset_id: number | null;
+  root_id: number;
+  root: string;
+  rel: string;
+  path: string;
+  name: string;
+  kind: string;
+  role: string | null;
+  indexed_at: string;
+  rating: number;
+  flag: string;
+  keywords: number;
+  renders: number;
+  present: boolean;
+}
+
+export interface DupGroup {
+  blake3: string;
+  size: number;
+  files: DupFile[];
+  /** Bytes freed if every copy but one goes. */
+  wasted: number;
+}
+
+/** Which folders a duplicate scan looks in. */
+export interface DupScope {
+  roots: number[];
+  /** Also read everything else, and report a group when any copy is inside `roots`. */
+  whole_library: boolean;
+}
+
+export interface DupScan {
+  groups: DupGroup[];
+  hashed: number;
+  wasted: number;
+}
+
+/** One file of a photo, listed on the confirm screen before anything is removed. */
+export interface DoomedFile {
+  file_id: number;
+  asset_id: number;
+  path: string;
+  name: string;
+  role: string;
+  size: number;
+  present: boolean;
+}
+
+export interface PurgeReport {
+  removed: number;
+  bytes: number;
+  failed: [string, string][];
+  assets_removed: number;
+}
+
 /** A dynamic catalog: a saved filter, re-run every time it is opened. */
 export interface Collection {
   id: number;
@@ -332,6 +397,11 @@ export const catalog = {
   preview: (id: number) => invoke<string | null>("catalog_preview", { id }),
   previewPx: (id: number, maxPx: number) => invoke<string | null>("catalog_preview_px", { id, maxPx }),
   renderPreview: (render: number, maxPx: number) => invoke<string | null>("catalog_render_preview", { render, maxPx }),
+  findDuplicates: (scope?: DupScope) => invoke<DupScan>("catalog_find_duplicates", { scope: scope ?? null }),
+  doomedFiles: (ids: number[]) => invoke<DoomedFile[]>("catalog_doomed_files", { ids }),
+  purgeAssets: (ids: number[], del: boolean) => invoke<PurgeReport>("catalog_purge_assets", { ids, delete: del }),
+  purgeDuplicates: (keep: number, drop: number[], del: boolean) =>
+    invoke<PurgeReport>("catalog_purge_duplicates", { keep, drop, delete: del }),
   collections: () => invoke<Collection[]>("catalog_collections"),
   saveCollection: (name: string, filter: Filter, sort: SortKey | null) =>
     invoke<number>("catalog_save_collection", { name, filter, sort }),
@@ -438,6 +508,14 @@ export interface Look {
 
 export type WhiteBalance = "as_shot" | "daylight" | "tungsten" | "custom";
 
+/** A crop rectangle in fractions of the frame, from the top left. */
+export interface Crop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface RawSettings {
   white_balance: WhiteBalance;
   temperature: number;
@@ -445,6 +523,11 @@ export interface RawSettings {
   exposure_ev: number;
   highlight: number;
   demosaic: number | null;
+  /** Quarter turns clockwise, on top of the camera's own orientation. */
+  rotate: number;
+  /** Straighten angle in degrees, positive clockwise; the frame is trimmed to fit. */
+  straighten: number;
+  crop: Crop | null;
 }
 
 export const defaultRaw = (): RawSettings => ({
@@ -454,6 +537,9 @@ export const defaultRaw = (): RawSettings => ({
   exposure_ev: 0,
   highlight: 0,
   demosaic: null,
+  rotate: 0,
+  straighten: 0,
+  crop: null,
 });
 
 export interface ImportedLook {

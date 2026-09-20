@@ -369,6 +369,11 @@ class Library {
     return catalog.ids($state.snapshot(this.filter), this.sort);
   }
 
+  /** The duplicates panel is open over the grid. */
+  duplicates = $state(false);
+  /** The rejected-photos panel is open over the grid. */
+  rejects = $state(false);
+
   // ---------- dynamic catalogs ----------
 
   collections = $state<Collection[]>([]);

@@ -10,6 +10,7 @@ pub mod copy;
 pub mod decode;
 pub mod export;
 pub mod film;
+pub mod geometry;
 pub mod job;
 pub mod look;
 pub mod manifest;

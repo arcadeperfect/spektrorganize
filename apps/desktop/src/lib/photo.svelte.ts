@@ -7,6 +7,9 @@ import { looks as backend, defaultRaw, type InputInfo, type RawSettings } from "
 /** Preview size when the photo is fitted to the stage. */
 export const BASE_PX = 1600;
 
+/** Preview size while a control is being dragged. */
+const DRAG_PX = 900;
+
 /** Pixels to render for a zoom level, in steps so small moves do not re-render. */
 export function detailFor(zoom: number, native: number): number {
   const want = Math.ceil((BASE_PX * Math.max(1, zoom)) / 800) * 800;
@@ -35,7 +38,16 @@ class DevelopStage {
   detail = $state(BASE_PX);
   /** Render every pixel the photo has, however far out the view is zoomed. */
   full = $state(false);
+  /**
+   * While the crop tool is open the preview shows the whole frame, so the
+   * rectangle has something to be drawn on. The crop itself is still saved.
+   */
+  showWholeFrame = $state(false);
   private zoomTimer: ReturnType<typeof setTimeout> | null = null;
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A control is being dragged right now, so the preview stays small. */
+  dragging = $state(false);
 
   /** The photo's own longest side, 0 when the catalog never recorded it. */
   get native(): number {
@@ -87,15 +99,52 @@ class DevelopStage {
     this.refresh();
   }
 
-  setRaw(patch: Partial<RawSettings>) {
+  /**
+   * Change the develop settings. `live` is for a control being dragged: the
+   * preview renders small while the pointer moves and full size once it
+   * settles, and the catalog write waits for the same pause. Without it a
+   * slider queues a decode, a JPEG encode and a database write per pixel.
+   */
+  setRaw(patch: Partial<RawSettings>, live = false) {
     this.raw = { ...this.raw, ...patch };
     this.version++;
-    if (this.id !== null) backend.rawSet([this.id], this.raw).catch((e) => (this.error = String(e)));
+    this.queueSave();
+    // The crop tool renders the whole frame, so dragging the rectangle changes
+    // nothing about the picture on screen: save it and skip the render.
+    if (this.showWholeFrame && Object.keys(patch).length === 1 && "crop" in patch) return;
+    if (!live) {
+      this.dragging = false;
+      this.refresh();
+      return;
+    }
+    this.dragging = true;
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
+      this.dragging = false;
+      this.refresh();
+    }, 220);
     this.refresh();
+  }
+
+  /** One write per pause, not one per pointer move. */
+  private queueSave() {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.id !== null) backend.rawSet([this.id], $state.snapshot(this.raw)).catch((e) => (this.error = String(e)));
+    }, 250);
   }
 
   reset() {
     this.setRaw(defaultRaw());
+  }
+
+  /** Open or close the crop tool's view of the uncropped frame. */
+  setWholeFrame(on: boolean) {
+    if (this.showWholeFrame === on) return;
+    this.showWholeFrame = on;
+    this.refresh();
   }
 
   /** Copy this photo's develop settings onto others. */
@@ -116,7 +165,10 @@ class DevelopStage {
     if (this.id === null) return;
     this.rendering = true;
     try {
-      this.preview = await backend.developPreview(this.id, { ...this.raw }, this.detail);
+      const raw = this.showWholeFrame ? { ...this.raw, crop: null } : { ...this.raw };
+      // Dragging: a smaller render keeps up with the pointer. The settled one follows.
+      const px = this.dragging ? Math.min(this.detail, DRAG_PX) : this.detail;
+      this.preview = await backend.developPreview(this.id, raw, px);
       this.error = null;
     } catch (e) {
       this.error = String(e);

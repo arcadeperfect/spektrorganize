@@ -105,17 +105,60 @@ pub struct RawSettings {
     /// LibRaw demosaic (`user_qual`); `None` keeps the default (AHD /
     /// Markesteijn 3-pass).
     pub demosaic: Option<i32>,
+    /// Quarter turns clockwise on top of the camera's own orientation.
+    pub rotate: i32,
+    /// Straighten angle in degrees, positive clockwise. The frame is trimmed to fit.
+    pub straighten: f64,
+    /// Crop rectangle, as fractions of the straightened frame. `None` = the whole frame.
+    pub crop: Option<Crop>,
+}
+
+/// A crop rectangle in fractions of the frame, from the top left.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Crop {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+impl Default for Crop {
+    fn default() -> Self {
+        Crop { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }
+    }
+}
+
+impl Crop {
+    /// The whole frame, in which case there is nothing to cut.
+    pub fn is_whole(&self) -> bool {
+        self.x <= 0.0 && self.y <= 0.0 && self.w >= 1.0 && self.h >= 1.0
+    }
 }
 
 impl Default for RawSettings {
     fn default() -> Self {
-        RawSettings { white_balance: WhiteBalance::AsShot, temperature: 5500.0, tint: 1.0, exposure_ev: 0.0, highlight: 0, demosaic: None }
+        RawSettings {
+            white_balance: WhiteBalance::AsShot,
+            temperature: 5500.0,
+            tint: 1.0,
+            exposure_ev: 0.0,
+            highlight: 0,
+            demosaic: None,
+            rotate: 0,
+            straighten: 0.0,
+            crop: None,
+        }
     }
 }
 
 impl RawSettings {
     pub fn is_default(&self) -> bool {
         self == &RawSettings::default()
+    }
+
+    /// Whether anything in the geometry stage would change the frame.
+    pub fn has_geometry(&self) -> bool {
+        self.rotate.rem_euclid(4) != 0 || self.straighten.abs() >= 0.001 || self.crop.is_some_and(|c| !c.is_whole())
     }
 
     /// Scene temperature to adapt from, if the white balance adapts at all.
@@ -337,11 +380,8 @@ pub fn decode_image(path: &Path, raw: &RawSettings, max_px: u32) -> Result<Linea
 
 /// Decode a photo for rendering: LibRaw for RAWs, [`decode_image`] otherwise.
 pub fn develop_any(path: &Path, settings: &DevelopSettings) -> Result<LinearImage, DecodeError> {
-    if is_raw_path(path) {
-        RawFile::open(path)?.develop(settings)
-    } else {
-        decode_image(path, &settings.raw, 0)
-    }
+    let img = if is_raw_path(path) { RawFile::open(path)?.develop(settings)? } else { decode_image(path, &settings.raw, 0)? };
+    Ok(crate::geometry::apply(img, &settings.raw))
 }
 
 /// White-balance adaptation, tint and exposure on the decoded linear image

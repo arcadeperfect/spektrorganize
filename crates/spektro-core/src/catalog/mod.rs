@@ -19,9 +19,12 @@
 //! Connections: one per thread. SQLite runs in WAL mode, so the UI can read while an indexer or
 //! the thumbnail writer holds a write transaction; `busy_timeout` covers writer overlap.
 
+pub mod duplicates;
+pub mod import_dupes;
 pub mod index;
 pub mod keywords;
 pub mod print;
+pub mod purge;
 pub mod query;
 mod schema;
 pub mod thumbs;

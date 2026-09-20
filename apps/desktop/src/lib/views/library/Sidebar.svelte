@@ -179,6 +179,14 @@
           <span class="warn">Missing files</span><span class="n">{facets.missing}</span>
         </button>
       {/if}
+      <button class="item" class:active={lib.duplicates} onclick={() => (lib.duplicates = true)} title="Find files that are byte-for-byte copies">
+        <span class="muted">Duplicates…</span>
+      </button>
+      {#if facets.rejected}
+        <button class="item" class:active={lib.rejects} onclick={() => (lib.rejects = true)} title="Review the rejects and clear them out">
+          <span class="muted">Purge rejected…</span><span class="n">{facets.rejected}</span>
+        </button>
+      {/if}
     </section>
 
     <section>

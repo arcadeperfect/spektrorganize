@@ -9,12 +9,40 @@
   const photos = $derived(store.scan?.groups.filter((g) => g.kind === "raw" || g.kind === "image") ?? []);
   const videos = $derived(store.scan?.groups.filter((g) => g.kind === "video") ?? []);
   const others = $derived(store.scan?.groups.filter((g) => g.kind === "sidecar" || g.kind === "other") ?? []);
-  const shown = $derived(filter === "photos" ? photos : filter === "videos" ? videos : others);
+  /** Declined copies stay on screen by default, so you can see what was skipped. */
+  let showCopies = $state(true);
+  const isCopy = (g: GroupView) => g.copy_of !== null || g.known_at !== null;
+  const shown = $derived(
+    (filter === "photos" ? photos : filter === "videos" ? videos : others).filter((g) => showCopies || !isCopy(g)),
+  );
   const embedded = $derived(photos.filter((g) => g.preview === "embedded_preview").length);
   const excludedCount = $derived(store.scan?.groups.filter((g) => g.excluded).length ?? 0);
+  const copies = $derived(store.scan?.copies ?? 0);
+  const held = $derived(store.scan?.already_held ?? 0);
 
-  function toggle(g: GroupView) {
-    store.setExcluded([g.id], !g.excluded);
+  /** Put the copies and the already-held photos back in, if you really want them. */
+  function includeDupes() {
+    const ids = (store.scan?.groups ?? []).filter((g) => g.copy_of !== null || g.known_at !== null).map((g) => g.id);
+    store.setExcluded(ids, false);
+  }
+
+  /** The last photo clicked, and what that click did — shift-click repeats it over a range. */
+  let anchor = $state<{ index: number; excluded: boolean } | null>(null);
+
+  function click(g: GroupView, i: number, e: MouseEvent | KeyboardEvent) {
+    if (e.shiftKey && anchor) {
+      // Everything between the two clicks takes the state the first click set.
+      const [lo, hi] = anchor.index < i ? [anchor.index, i] : [i, anchor.index];
+      store.setExcluded(
+        shown.slice(lo, hi + 1).map((x) => x.id),
+        anchor.excluded,
+      );
+      anchor = { index: i, excluded: anchor.excluded };
+      return;
+    }
+    const excluded = !g.excluded;
+    store.setExcluded([g.id], excluded);
+    anchor = { index: i, excluded };
   }
   function setAll(excluded: boolean) {
     store.setExcluded(
@@ -67,10 +95,34 @@
     </div>
   {/if}
 
+  {#if copies || held}
+    <div class="card dupes">
+      <div class="row spread">
+        <span class="small">
+          {#if copies}<b>{copies}</b> {copies === 1 ? "photo is a copy" : "photos are copies"} of another on this card{/if}
+          {#if copies && held}, and{/if}
+          {#if held}<b>{held}</b> {held === 1 ? "is" : "are"} already in your library{/if}
+          — excluded, so each photo is imported once.
+        </span>
+        <div class="row">
+          <button class="mini" onclick={() => (showCopies = !showCopies)}>{showCopies ? "hide them" : "show them"}</button>
+          <button class="mini" onclick={includeDupes}>include them anyway</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if filter === "photos"}
     <div class="grid" style="--w: {size}px">
-      {#each shown as g (g.id)}
-        <div class="tile" class:excluded={g.excluded} onclick={() => toggle(g)} role="button" tabindex="0" onkeydown={(e) => e.key === " " && toggle(g)}>
+      {#each shown as g, i (g.id)}
+        <div
+          class="tile"
+          class:excluded={g.excluded}
+          onclick={(e) => click(g, i, e)}
+          role="button"
+          tabindex="0"
+          onkeydown={(e) => e.key === " " && click(g, i, e)}
+        >
           <Thumb group={g.id} />
           <div class="meta">
             <div class="row spread">
@@ -80,7 +132,11 @@
             <div class="muted small">{when(g)}{g.camera ? " · " + g.camera : ""}{g.iso ? " · ISO " + g.iso : ""}</div>
             <div class="muted small">{previewLabel(g.preview)}</div>
           </div>
-          {#if g.excluded}
+          {#if g.copy_of !== null}
+            <div class="x why">copy on this card</div>
+          {:else if g.known_at !== null}
+            <div class="x why" title={g.known_at}>already in the library</div>
+          {:else if g.excluded}
             <div class="x">excluded</div>
           {/if}
         </div>
@@ -88,8 +144,15 @@
     </div>
   {:else}
     <div class="list">
-      {#each shown as g (g.id)}
-        <div class="line" class:excluded={g.excluded} onclick={() => toggle(g)} role="button" tabindex="0" onkeydown={(e) => e.key === " " && toggle(g)}>
+      {#each shown as g, i (g.id)}
+        <div
+          class="line"
+          class:excluded={g.excluded}
+          onclick={(e) => click(g, i, e)}
+          role="button"
+          tabindex="0"
+          onkeydown={(e) => e.key === " " && click(g, i, e)}
+        >
           <input type="checkbox" checked={!g.excluded} tabindex="-1" />
           <span class="mono">{g.rel}</span>
           {#if g.attachments.length}
@@ -153,6 +216,15 @@
   }
   .tile:hover {
     border-color: #4a443f;
+  }
+  .dupes {
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    border-color: var(--warn);
+  }
+  .x.why {
+    background: rgba(20, 18, 17, 0.88);
+    color: var(--warn);
   }
   .tile.excluded {
     opacity: 0.35;

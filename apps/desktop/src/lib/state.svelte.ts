@@ -79,7 +79,14 @@ class Store {
     if (this.listening) return;
     this.listening = true;
     await api.on<{ phase: string; files?: number; done?: number; total?: number }>("scan-progress", (p) => {
-      this.scanProgress = p.phase === "walking" ? `${p.files} files found` : `reading metadata ${p.done}/${p.total}`;
+      this.scanProgress =
+        p.phase === "walking"
+          ? `${p.files} files found`
+          : p.phase === "duplicates"
+            ? p.total
+              ? `checking for copies ${p.done}/${p.total}`
+              : "checking for copies"
+            : `reading metadata ${p.done}/${p.total}`;
     });
     await api.on<ScanView>("scan-done", (s) => {
       this.scan = s;

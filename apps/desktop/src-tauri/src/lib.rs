@@ -5,6 +5,7 @@ mod catalog;
 mod looks;
 
 use serde::{Deserialize, Serialize};
+use spektro_core::catalog::import_dupes::ImportDupes;
 use spektro_core::config::{Config, Outputs};
 use spektro_core::job::{Cancel, JobEvent};
 use spektro_core::manifest::Manifest;
@@ -22,6 +23,7 @@ pub struct AppState {
     config: Mutex<Config>,
     scan: Mutex<Option<Arc<Scan>>>,
     excluded: Mutex<HashSet<u32>>,
+    dupes: Mutex<ImportDupes>,
     plan: Mutex<Option<Arc<Plan>>>,
     cancel: Mutex<Option<Cancel>>,
     busy: AtomicBool,
@@ -53,6 +55,10 @@ pub struct GroupView {
     pub lens: Option<String>,
     pub preview: PreviewSource,
     pub excluded: bool,
+    /// This group is a copy of another group in the same scan (its id).
+    pub copy_of: Option<u32>,
+    /// The catalog already holds these bytes, at this path.
+    pub known_at: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -62,9 +68,12 @@ pub struct ScanView {
     pub files: usize,
     pub bytes: u64,
     pub errors: Vec<(String, String)>,
+    /// Copies found inside the scan, and photos the catalog already holds.
+    pub copies: usize,
+    pub already_held: usize,
 }
 
-fn scan_view(scan: &Scan, excluded: &HashSet<u32>) -> ScanView {
+fn scan_view(scan: &Scan, excluded: &HashSet<u32>, dupes: &ImportDupes) -> ScanView {
     let groups = scan
         .groups
         .iter()
@@ -83,6 +92,8 @@ fn scan_view(scan: &Scan, excluded: &HashSet<u32>) -> ScanView {
                 lens: g.meta.lens.clone(),
                 preview: g.preview,
                 excluded: excluded.contains(&g.id.0),
+                copy_of: dupes.copies.get(&g.id.0).copied(),
+                known_at: dupes.known.get(&g.id.0).cloned(),
             }
         })
         .collect();
@@ -92,6 +103,8 @@ fn scan_view(scan: &Scan, excluded: &HashSet<u32>) -> ScanView {
         files: scan.files.len(),
         bytes: scan.total_bytes(),
         errors: scan.errors.iter().map(|(p, e)| (p.to_string_lossy().to_string(), e.clone())).collect(),
+        copies: dupes.copies.len(),
+        already_held: dupes.known.len(),
     }
 }
 
@@ -184,6 +197,7 @@ fn start_scan(app: AppHandle, state: State<AppState>, path: String) -> Result<()
     *state.scan.lock().unwrap() = None;
     *state.plan.lock().unwrap() = None;
     state.excluded.lock().unwrap().clear();
+    *state.dupes.lock().unwrap() = ImportDupes::default();
     let root = PathBuf::from(path);
     std::thread::spawn(move || {
         let h = app.clone();
@@ -196,8 +210,29 @@ fn start_scan(app: AppHandle, state: State<AppState>, path: String) -> Result<()
         let st = app.state::<AppState>();
         match result {
             Ok(scan) => {
-                let view = scan_view(&scan, &HashSet::new());
+                // Copies within the card, and photos the library already holds. Only files
+                // that share a name and size with something are read, so this is usually free.
+                let _ = app.emit("scan-progress", serde_json::json!({ "phase": "duplicates", "done": 0, "total": 0 }));
+                let dupes = {
+                    let cat = app.state::<catalog::CatalogState>();
+                    let db = cat.db.lock().unwrap();
+                    spektro_core::catalog::import_dupes::find(&scan, Some(&db), |done, total| {
+                        let _ = app.emit("scan-progress", serde_json::json!({ "phase": "duplicates", "done": done, "total": total }));
+                    })
+                    .unwrap_or_default()
+                };
+                {
+                    let mut ex = st.excluded.lock().unwrap();
+                    for id in dupes.to_exclude() {
+                        ex.insert(id);
+                    }
+                }
+                let view = {
+                    let ex = st.excluded.lock().unwrap();
+                    scan_view(&scan, &ex, &dupes)
+                };
                 *st.scan.lock().unwrap() = Some(Arc::new(scan));
+                *st.dupes.lock().unwrap() = dupes;
                 st.busy.store(false, Ordering::SeqCst);
                 let _ = app.emit("scan-done", view);
             }
@@ -213,7 +248,7 @@ fn start_scan(app: AppHandle, state: State<AppState>, path: String) -> Result<()
 #[tauri::command]
 fn get_scan(state: State<AppState>) -> Option<ScanView> {
     let scan = state.scan.lock().unwrap().clone()?;
-    Some(scan_view(&scan, &state.excluded.lock().unwrap()))
+    Some(scan_view(&scan, &state.excluded.lock().unwrap(), &state.dupes.lock().unwrap()))
 }
 
 #[tauri::command]
@@ -434,6 +469,7 @@ pub fn run() {
                 config: Mutex::new(config),
                 scan: Mutex::new(None),
                 excluded: Mutex::new(HashSet::new()),
+                dupes: Mutex::new(ImportDupes::default()),
                 plan: Mutex::new(None),
                 cancel: Mutex::new(None),
                 busy: AtomicBool::new(false),
@@ -479,6 +515,10 @@ pub fn run() {
             catalog::catalog_preview,
             catalog::catalog_preview_px,
             catalog::catalog_render_preview,
+            catalog::catalog_find_duplicates,
+            catalog::catalog_purge_duplicates,
+            catalog::catalog_doomed_files,
+            catalog::catalog_purge_assets,
             catalog::catalog_collections,
             catalog::catalog_save_collection,
             catalog::catalog_delete_collection,

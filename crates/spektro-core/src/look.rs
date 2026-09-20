@@ -196,6 +196,7 @@ impl PreviewEngine {
         // The decode above used LibRaw's own balance; now the adaptation,
         // tint and exposure.
         apply_raw_adjustments(&mut img, raw);
+        let img = crate::geometry::apply(img, raw);
         let pipeline = self.pipeline(preset, data_dir, img.color_space)?;
         let buf = ImageBuf::from_data(img.width, img.height, img.data.iter().map(|v| from_f32(*v)).collect());
         let out = pipeline.process(buf, self.backend.as_ref());
@@ -207,7 +208,7 @@ impl PreviewEngine {
     pub fn render_developed(&mut self, raw_path: &Path, raw: &RawSettings, max_px: u32) -> anyhow::Result<Vec<u8>> {
         let mut img = self.decode(raw_path, raw, max_px)?;
         apply_raw_adjustments(&mut img, raw);
-        self.to_srgb_jpeg(img)
+        self.to_srgb_jpeg(crate::geometry::apply(img, raw))
     }
 
     /// The print stage's "before": the developed photo at the exposure the
@@ -216,6 +217,7 @@ impl PreviewEngine {
     pub fn render_before(&mut self, raw_path: &Path, raw: &RawSettings, preset: &Preset, data_dir: &Path, max_px: u32) -> anyhow::Result<Vec<u8>> {
         let mut img = self.decode(raw_path, raw, max_px)?;
         apply_raw_adjustments(&mut img, raw);
+        let mut img = crate::geometry::apply(img, raw);
         let pipeline = self.pipeline(preset, data_dir, img.color_space)?;
         let buf = ImageBuf::from_data(img.width, img.height, img.data.iter().map(|v| from_f32(*v)).collect());
         let ev = pipeline.autoexposure_ev(&buf) + pipeline.params.camera.exposure_compensation_ev as f64;

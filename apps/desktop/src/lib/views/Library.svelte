@@ -12,6 +12,8 @@
   import ContextMenu from "./library/ContextMenu.svelte";
   import PrintDialog from "./library/PrintDialog.svelte";
   import JobPanel from "./JobPanel.svelte";
+  import Duplicates from "./library/Duplicates.svelte";
+  import Rejects from "./library/Rejects.svelte";
 
   let text = $state(lib.filter.text ?? "");
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -50,6 +52,12 @@
 </script>
 
 <div class="lib">
+  {#if lib.duplicates}
+    <Duplicates />
+  {/if}
+  {#if lib.rejects}
+    <Rejects />
+  {/if}
   {#if lib.loupe !== null}
     <Loupe />
   {/if}
