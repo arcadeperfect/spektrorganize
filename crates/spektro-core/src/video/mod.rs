@@ -10,6 +10,10 @@ use std::path::Path;
 
 #[cfg(target_os = "macos")]
 mod avf;
+#[cfg(target_os = "macos")]
+mod avf_render;
+pub mod lut;
+pub mod render;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VideoError {
@@ -111,6 +115,42 @@ mod tests {
         let c = |c: &str| VideoMeta { codec: c.into(), ..Default::default() };
         assert!(c("hvc1").is_hevc() && c("hev1").is_hevc());
         assert!(!c("avc1").is_hevc() && !c("apcn").is_hevc());
+    }
+
+    /// Render a real clip, with no look, to check the read/write path end to end:
+    /// `SPEKTRO_TEST_VIDEO=/path/clip.mov cargo test -p spektro-core renders_a_real_clip -- --ignored --nocapture`
+    #[test]
+    #[ignore = "needs a video file"]
+    fn renders_a_real_clip() {
+        let Ok(path) = std::env::var("SPEKTRO_TEST_VIDEO") else { return };
+        let src = std::path::PathBuf::from(path);
+        let dst = std::env::temp_dir().join("spektro-render-test.mp4");
+        let req = render::RenderRequest {
+            src: src.clone(),
+            dst: dst.clone(),
+            codec: render::OutCodec::H264,
+            look: match std::env::var("SPEKTRO_TEST_LOOK").as_deref() {
+                Ok("full") => render::LookMode::Full,
+                Ok(_) => render::LookMode::Lut,
+                Err(_) => render::LookMode::None,
+            },
+            max_px: 640,
+            mbps: 4.0,
+            audio: std::env::var("SPEKTRO_TEST_AUDIO").is_ok(),
+        };
+        let preset = std::env::var("SPEKTRO_TEST_PRESET").ok().map(|p| crate::film::Preset::load(std::path::Path::new(&p)).expect("preset"));
+        let data_dir = std::env::var("SPEKTRO_DATA_DIR").unwrap_or_else(|_| "vendor/spektrafilm-data".into());
+        let report = render::render(&req, preset.as_ref(), std::path::Path::new(&data_dir), &|d, t| {
+            if d % 30 == 0 {
+                println!("  {d}/{t}");
+            }
+        }, &|| false)
+        .expect("render");
+        println!("{} frames, {}x{}, {:.1}s", report.frames, report.width, report.height, report.seconds);
+        let out = probe(&dst).expect("probe the result");
+        println!("out: {} {}x{} {}", out.duration_text(), out.width, out.height, out.codec);
+        assert!(report.frames > 0 && out.width == report.width);
+        let _ = std::fs::remove_file(&dst);
     }
 
     /// Point this at a real clip to check the AVFoundation path:
