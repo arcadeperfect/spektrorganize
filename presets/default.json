@@ -1,0 +1,15 @@
+{
+  "name": "Portra 400 on Portra Endura",
+  "film": "kodak_portra_400",
+  "print": "kodak_portra_endura",
+  "params": {
+    "camera": {
+      "auto_exposure": true,
+      "film_format_mm": 35.0
+    },
+    "settings": {
+      "use_enlarger_lut": true,
+      "use_scanner_lut": true
+    }
+  }
+}

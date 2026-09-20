@@ -1,0 +1,10 @@
+{
+  "name": "Portra 400 medium format, slight overexposure",
+  "film": "kodak_portra_400",
+  "print": "kodak_portra_endura",
+  "params": {
+    "camera": { "auto_exposure": true, "exposure_compensation_ev": 0.7, "film_format_mm": 60.0 },
+    "enlarger": { "print_exposure": 1.15 },
+    "settings": { "use_enlarger_lut": true, "use_scanner_lut": true }
+  }
+}

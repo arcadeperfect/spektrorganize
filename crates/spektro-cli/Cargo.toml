@@ -1,0 +1,20 @@
+[package]
+name = "spektro-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Command-line front end for spektrorganize"
+
+[[bin]]
+name = "spektro"
+path = "src/main.rs"
+
+[dependencies]
+spektro-core = { path = "../spektro-core" }
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

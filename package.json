@@ -1,0 +1,10 @@
+{
+  "name": "spektrorganize-root",
+  "private": true,
+  "description": "Convenience scripts: the desktop app lives in apps/desktop.",
+  "scripts": {
+    "tauri": "npm --prefix apps/desktop run tauri --",
+    "dev": "npm --prefix apps/desktop run tauri -- dev",
+    "build": "npm --prefix apps/desktop run tauri -- build --debug --bundles app"
+  }
+}

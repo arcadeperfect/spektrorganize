@@ -1,0 +1,10 @@
+{
+  "name": "Provia 100F slide scan",
+  "film": "fujifilm_provia_100f",
+  "print": "",
+  "params": {
+    "camera": { "auto_exposure": true, "film_format_mm": 35.0 },
+    "io": { "scan_film": true },
+    "settings": { "use_enlarger_lut": true, "use_scanner_lut": true }
+  }
+}

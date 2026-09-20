@@ -1,0 +1,9 @@
+{
+  "name": "Ektar 100 on Endura Premier",
+  "film": "kodak_ektar_100",
+  "print": "kodak_endura_premier",
+  "params": {
+    "camera": { "auto_exposure": true, "film_format_mm": 35.0 },
+    "settings": { "use_enlarger_lut": true, "use_scanner_lut": true }
+  }
+}

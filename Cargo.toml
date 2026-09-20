@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = ["crates/spektro-core", "crates/spektro-cli", "apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0"
+rust-version = "1.88"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1.1"
+chrono = { version = "0.4", features = ["serde"] }
+blake3 = "1.8"
+rayon = "1.12"
+walkdir = "2.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.6", features = ["derive"] }
+crossbeam-channel = "0.5"
+filetime = "0.2"
+kamadak-exif = "0.6"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+exr = "1.74"
+rsraw-sys = "0.1.1"
+libc = "0.2"
+rusqlite = { version = "0.37", features = ["bundled"] }
+dirs = "6"
+base64 = "0.22"
+
+# spektrafilm-rs: Alex's local fork (branch `spektro-experimental`, the port of
+# upstream's experimental branch 28bf883 + preset importers). Not on crates.io.
+spektrafilm-core = { path = "../spektrafilm-rs/crates/spektrafilm-core" }
+spektrafilm-gpu = { path = "../spektrafilm-rs/crates/spektrafilm-gpu" }
+spektrafilm-math = { path = "../spektrafilm-rs/crates/spektrafilm-math" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+# LibRaw and the film pipeline are unusably slow unoptimised; keep deps fast in dev builds.
+[profile.dev.package."*"]
+opt-level = 2

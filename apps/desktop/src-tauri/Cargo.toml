@@ -1,0 +1,30 @@
+[package]
+name = "spektrorganize"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Desktop app: import cards, archive, render through spektrafilm"
+
+[lib]
+name = "spektrorganize_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+spektro-core = { path = "../../../crates/spektro-core" }
+tauri = { version = "2.11", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.7"
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rusqlite.workspace = true
+base64.workspace = true
+ureq = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+trash = "5"

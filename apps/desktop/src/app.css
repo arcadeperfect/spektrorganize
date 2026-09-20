@@ -1,0 +1,255 @@
+:root {
+  --bg: #161514;
+  --bg-2: #1e1c1b;
+  --bg-3: #262322;
+  --line: #34302e;
+  --text: #e8e2da;
+  --muted: #9a918a;
+  --accent: #29a89c;
+  --accent-2: #4fd1c5;
+  /* Text on an accent-filled control. */
+  --on-accent: #06201d;
+  --ok: #7cb56a;
+  --warn: #e0b35a;
+  --bad: #d96b5a;
+  /* Token-derived folder levels in the layout preview: muted filmic earth tones,
+     one per depth. Literal folders stay in --text. */
+  --tok-1: #6fb3aa;
+  --tok-2: #c2a06a;
+  --tok-3: #9ab087;
+  --tok-4: #c48b76;
+  --tok-5: #871905;
+  --tok-6: #014d4e;
+  --radius: 8px;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: default;
+}
+button:hover {
+  background: #2f2b29;
+}
+button:disabled {
+  opacity: 0.45;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+button.primary:hover {
+  background: var(--accent-2);
+}
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+button.ghost:hover {
+  color: var(--text);
+  background: var(--bg-3);
+}
+
+input[type="text"],
+input[type="number"],
+select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+}
+input.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.muted {
+  color: var(--muted);
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.ok {
+  color: var(--ok);
+}
+.warn {
+  color: var(--warn);
+}
+.bad {
+  color: var(--bad);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spread {
+  justify-content: space-between;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+h2 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.progress {
+  height: 6px;
+  background: var(--bg-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3532;
+  border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+
+button.mini {
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+/* AI actions and labels (✦), as in organisicator. */
+button.ai {
+  background: #2e2642;
+  border-color: #43386a;
+  color: #d9ccf7;
+}
+button.ai:hover:not(:disabled) {
+  background: #3a3154;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 2px 0 8px;
+  border-radius: 999px;
+  background: #3a2e22;
+  color: #efc9a0;
+  white-space: nowrap;
+}
+.chip.ai {
+  background: #2e2642;
+  color: #cbb8f2;
+}
+.chip.ai::before {
+  content: "✦";
+  font-size: 9px;
+  opacity: 0.75;
+  margin-right: 3px;
+}
+button.x {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+button.x:hover {
+  opacity: 1;
+  background: transparent;
+}
+
+/* One-line status strips under a toolbar. */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+  font-size: 12px;
+}
+.strip.err {
+  background: #3a1f1c;
+  color: #f0b5aa;
+}
+.strip.ok {
+  background: #1f2d1c;
+  color: #bfe0b0;
+}
+.strip progress {
+  width: 140px;
+  accent-color: var(--accent);
+}
+.spacer {
+  flex: 1;
+}

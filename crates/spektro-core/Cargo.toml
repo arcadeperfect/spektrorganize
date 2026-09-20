@@ -1,0 +1,34 @@
+[package]
+name = "spektro-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Card import, archive layout, RAW decode and spektrafilm batch rendering"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+chrono.workspace = true
+blake3.workspace = true
+rayon.workspace = true
+walkdir.workspace = true
+tracing.workspace = true
+crossbeam-channel.workspace = true
+filetime.workspace = true
+kamadak-exif.workspace = true
+image.workspace = true
+exr.workspace = true
+rsraw-sys.workspace = true
+libc.workspace = true
+rusqlite.workspace = true
+dirs.workspace = true
+spektrafilm-core.workspace = true
+spektrafilm-gpu.workspace = true
+spektrafilm-math.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
