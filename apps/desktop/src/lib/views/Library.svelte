@@ -14,6 +14,7 @@
   import JobPanel from "./JobPanel.svelte";
   import Duplicates from "./library/Duplicates.svelte";
   import Rejects from "./library/Rejects.svelte";
+  import VideoExport from "./library/VideoExport.svelte";
 
   let text = $state(lib.filter.text ?? "");
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -57,6 +58,12 @@
   {/if}
   {#if lib.rejects}
     <Rejects />
+  {/if}
+  {#if lib.renderClip !== null}
+    {@const clip = lib.itemById(lib.renderClip)}
+    {#if clip}
+      <VideoExport asset={clip} onclose={() => (lib.renderClip = null)} />
+    {/if}
   {/if}
   {#if lib.loupe !== null}
     <Loupe />

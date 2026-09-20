@@ -204,7 +204,15 @@ class Store {
   }
 
   /** Print catalog assets through a preset; progress shows in the JobPanel. */
-  async startPrint(req: { ids: number[]; preset: string; jpeg: boolean; exr: boolean; camera_jpeg?: boolean }) {
+  async startPrint(req: {
+    ids: number[];
+    preset: string;
+    jpeg: boolean;
+    exr: boolean;
+    camera_jpeg?: boolean;
+    /** How any clips in the selection are rendered. */
+    video?: { look: string; codec: string; max_px: number; mbps: number };
+  }) {
     this.job = freshJob("print");
     this.job.phase = "render";
     this.busy = true;

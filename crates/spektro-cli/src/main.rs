@@ -639,6 +639,7 @@ fn catalog_cmd(cli: &Cli, cmd: &CatalogCmd) -> anyhow::Result<()> {
                 exr: outputs.exr,
                 camera_jpeg: *camera_jpeg,
                 destination: None,
+                video: Default::default(),
             };
             let r = spektro_core::catalog::print::export_assets(&cat, &cfg, ids, &opts, event_printer(), &Cancel::new())?;
             println!(

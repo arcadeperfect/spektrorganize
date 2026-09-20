@@ -334,6 +334,29 @@ pub async fn catalog_render_preview(app: AppHandle, render: i64, max_px: u32) ->
     .map_err(err)?
 }
 
+/// How clips are rendered in a print or export run, as the UI sends it.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(default)]
+pub struct VideoPrintReq {
+    pub look: spektro_core::video::render::LookMode,
+    pub codec: spektro_core::video::render::OutCodec,
+    pub max_px: u32,
+    pub mbps: f32,
+}
+
+impl Default for VideoPrintReq {
+    fn default() -> Self {
+        let d = spektro_core::catalog::print::VideoPrint::default();
+        VideoPrintReq { look: d.look, codec: d.codec, max_px: d.max_px, mbps: d.mbps }
+    }
+}
+
+impl From<VideoPrintReq> for spektro_core::catalog::print::VideoPrint {
+    fn from(v: VideoPrintReq) -> Self {
+        spektro_core::catalog::print::VideoPrint { look: v.look, codec: v.codec, max_px: v.max_px, mbps: v.mbps }
+    }
+}
+
 // ---------- duplicates ----------
 
 /// Every group of byte-identical files. Hashing runs on a worker thread and reports progress.
@@ -568,6 +591,9 @@ pub struct PrintRequest {
     /// Also copy the camera JPEG of photos that have one.
     #[serde(default)]
     pub camera_jpeg: bool,
+    /// How any clips in the run are rendered.
+    #[serde(default)]
+    pub video: Option<VideoPrintReq>,
 }
 
 // ---------- export queue ----------
@@ -611,6 +637,9 @@ pub struct ExportRequest {
     pub destination: Option<PathBuf>,
     /// Clear the queue when the run finishes.
     pub clear_queue: bool,
+    /// How any clips in the run are rendered.
+    #[serde(default)]
+    pub video: Option<VideoPrintReq>,
 }
 
 /// Run one export: renders and/or camera-JPEG copies. Progress: `job-event`.
@@ -637,6 +666,7 @@ pub fn catalog_export(app: AppHandle, state: State<AppState>, st: State<CatalogS
             exr: req.exr,
             camera_jpeg: req.camera_jpeg,
             destination: req.destination.clone(),
+            video: req.video.unwrap_or_default().into(),
         };
         let result = Catalog::open(&path).and_then(|c| {
             let r = spektro_core::catalog::print::export_assets(&c, &cfg, &req.ids, &opts, sink.clone(), &cancel);
@@ -693,6 +723,7 @@ pub fn catalog_print(app: AppHandle, state: State<AppState>, st: State<CatalogSt
             exr: outputs.exr,
             camera_jpeg: req.camera_jpeg,
             destination: None,
+            video: req.video.unwrap_or_default().into(),
         };
         let result = Catalog::open(&path).and_then(|c| spektro_core::catalog::print::export_assets(&c, &cfg, &req.ids, &opts, sink.clone(), &cancel));
         let st = app.state::<AppState>();

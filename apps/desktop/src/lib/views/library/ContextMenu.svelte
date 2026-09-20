@@ -8,6 +8,8 @@
   const menu = $derived(lib.menu);
   const ids = $derived(menu?.ids ?? []);
   const one = $derived(ids.length === 1);
+  /** One clip on its own gets the render dialog; a mixed selection prints instead. */
+  const clip = $derived(one && lib.itemById(ids[0])?.kind === "video");
 
   function close() {
     lib.menu = null;
@@ -39,6 +41,10 @@
       <button role="menuitem" onclick={() => act((sel) => lib.queueRemove(sel))}>Remove from export queue</button>
     {/if}
     <div class="sep"></div>
+    {#if clip}
+      <button role="menuitem" onclick={() => act((sel) => (lib.renderClip = sel[0]))}>Render this clip…</button>
+      <div class="sep"></div>
+    {/if}
     <button role="menuitem" onclick={() => act((sel) => { develop.setPhoto(sel[0]); store.view = "develop"; })}>Develop…</button>
     <button role="menuitem" onclick={() => act((sel) => { develop.setPhoto(sel[0]); store.view = "print"; })}>Print look…</button>
     <button role="menuitem" onclick={() => act(() => lib.askPrint())}>Print{one ? "" : ` ${ids.length}`}…</button>

@@ -33,6 +33,8 @@ pub struct PrintReport {
 
 struct Source {
     asset: i64,
+    /// A clip rather than a photo: printed by rendering frames, not by developing a RAW.
+    is_video: bool,
     raw: PathBuf,
     captured: Option<NaiveDateTime>,
     camera: Option<String>,
@@ -72,6 +74,28 @@ fn with_suffix(rel: &str, suffix: &str) -> String {
     }
 }
 
+/// How clips in a print run are rendered. Photos ignore this entirely.
+#[derive(Debug, Clone, Copy)]
+pub struct VideoPrint {
+    pub look: crate::video::render::LookMode,
+    pub codec: crate::video::render::OutCodec,
+    /// Longest edge; 0 keeps the clip's own size.
+    pub max_px: u32,
+    pub mbps: f32,
+}
+
+impl Default for VideoPrint {
+    fn default() -> Self {
+        // A baked cube at posting size: the choice that finishes, for a batch.
+        VideoPrint {
+            look: crate::video::render::LookMode::Lut,
+            codec: crate::video::render::OutCodec::H264,
+            max_px: 1920,
+            mbps: 12.0,
+        }
+    }
+}
+
 /// What one export run should produce.
 #[derive(Debug, Clone)]
 pub struct ExportOptions {
@@ -84,6 +108,8 @@ pub struct ExportOptions {
     pub camera_jpeg: bool,
     /// Where to write; the configured render root when `None`.
     pub destination: Option<PathBuf>,
+    /// How any clips in the run are rendered.
+    pub video: VideoPrint,
 }
 
 /// Render and/or copy the camera JPEGs of `assets` in one run.
@@ -105,7 +131,7 @@ pub fn export_assets(
     }
     let mut report = if renders {
         let outputs = Outputs { jpeg: opts.jpeg, exr: opts.exr, ..cfg.outputs.clone() };
-        print_assets(cat, &cfg, assets, opts.look.as_deref().unwrap(), &outputs, events.clone(), cancel)?
+        print_assets(cat, &cfg, assets, opts.look.as_deref().unwrap(), &outputs, opts.video, events.clone(), cancel)?
     } else {
         PrintReport { requested: assets.len(), ..Default::default() }
     };
@@ -209,8 +235,8 @@ fn load_source(cat: &Catalog, asset: i64) -> anyhow::Result<Result<Source, Strin
              FROM assets a
              LEFT JOIN asset_files af ON af.asset_id = a.id AND af.file_id = (
                  SELECT file_id FROM asset_files
-                 WHERE asset_id = a.id AND role IN ('raw', 'jpeg', 'image')
-                 ORDER BY CASE role WHEN 'raw' THEN 0 ELSE 1 END LIMIT 1)
+                 WHERE asset_id = a.id AND role IN ('raw', 'jpeg', 'image', 'video')
+                 ORDER BY CASE role WHEN 'raw' THEN 0 WHEN 'video' THEN 2 ELSE 1 END LIMIT 1)
              LEFT JOIN files f ON f.id = af.file_id
              LEFT JOIN roots r ON r.id = f.root_id
              WHERE a.id = ?1",
@@ -238,7 +264,7 @@ fn load_source(cat: &Catalog, asset: i64) -> anyhow::Result<Result<Source, Strin
         return Ok(Err("not in the catalog".into()));
     };
     let (Some(rel), Some(root)) = (rel, root) else {
-        return Ok(Err(format!("not a photo ({kind}); only RAWs and images can be printed")));
+        return Ok(Err(format!("nothing printable here ({kind})")));
     };
     if online == Some(0) {
         return Ok(Err(format!("drive offline ({root})")));
@@ -248,6 +274,7 @@ fn load_source(cat: &Catalog, asset: i64) -> anyhow::Result<Result<Source, Strin
     }
     Ok(Ok(Source {
         asset,
+        is_video: kind == "video",
         raw: Path::new(&root).join(&rel),
         captured: captured.and_then(|s| NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S").ok()),
         camera,
@@ -260,6 +287,83 @@ fn load_source(cat: &Catalog, asset: i64) -> anyhow::Result<Result<Source, Strin
         added_at,
         raw_settings: cat.raw_settings(asset)?,
     }))
+}
+
+/// Swap a path's extension, keeping the rest of what the template produced.
+fn with_extension(rel: &str, ext: &str) -> String {
+    let p = Path::new(rel);
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("render");
+    match p.parent().filter(|d| !d.as_os_str().is_empty()) {
+        Some(d) => format!("{}/{stem}.{ext}", super::rel_string(d)),
+        None => format!("{stem}.{ext}"),
+    }
+}
+
+/// Render each clip through the look and record it as a print of that photo.
+#[allow(clippy::too_many_arguments)]
+fn print_clips(
+    cat: &Catalog,
+    cfg: &Config,
+    clips: &[(Source, String)],
+    preset: &Preset,
+    video: VideoPrint,
+    render_root_id: i64,
+    render_root: &Path,
+    report: &mut PrintReport,
+    events: &EventSink,
+    cancel: &Cancel,
+) -> anyhow::Result<()> {
+    if clips.is_empty() {
+        return Ok(());
+    }
+    if !crate::video::supported() {
+        for (src, _) in clips {
+            report.skipped.push((src.asset, "video needs macOS".into()));
+        }
+        return Ok(());
+    }
+    let data_dir = crate::film::find_data_dir(cfg.data_dir.as_deref())?;
+    let stamp = now();
+    for (src, rel) in clips {
+        if cancel.is_cancelled() {
+            break;
+        }
+        let dst = render_root.join(rel);
+        if let Some(dir) = dst.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let req = crate::video::render::RenderRequest {
+            src: src.raw.clone(),
+            dst: dst.clone(),
+            codec: video.codec,
+            look: video.look,
+            max_px: video.max_px,
+            mbps: video.mbps,
+            audio: false,
+        };
+        events(JobEvent::Log(format!("rendering {}", src.rel)));
+        let name = src.rel.clone();
+        match crate::video::render::render(&req, Some(preset), &data_dir, &|_, _| {}, &|| cancel.is_cancelled()) {
+            Ok(out) => {
+                report.rendered += 1;
+                report.outputs.push(dst.clone());
+                cat.conn().execute(
+                    "INSERT INTO renders (asset_id, kind, root_id, rel, preset_name, preset_hash, created_at)
+                     VALUES (?1, 'video', ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT (root_id, rel) DO UPDATE SET asset_id = excluded.asset_id, preset_name = excluded.preset_name,
+                                                             preset_hash = excluded.preset_hash, created_at = excluded.created_at",
+                    params![src.asset, render_root_id, rel, preset.name, preset.hash(), stamp],
+                )?;
+                events(JobEvent::Log(format!("{name}: {} frames in {:.1}s", out.frames, out.seconds)));
+            }
+            Err(e) => {
+                report.failed += 1;
+                events(JobEvent::Log(format!("{name}: {e}")));
+                report.skipped.push((src.asset, e.to_string()));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn context(s: &Source, preset: &Preset) -> Context {
@@ -313,7 +417,16 @@ fn choose_rel(cat: &Catalog, root_id: i64, root: &Path, want: String, asset: i64
 
 /// Render `assets` with the preset at/named `preset` into `cfg.render_root`. Progress goes to
 /// `events` as `RenderStarted`/`RenderDone{entry: asset id}`/`RenderFailed`/`RenderFinished`.
-pub fn print_assets(cat: &Catalog, cfg: &Config, assets: &[i64], preset: &Path, outputs: &Outputs, events: EventSink, cancel: &Cancel) -> anyhow::Result<PrintReport> {
+pub fn print_assets(
+    cat: &Catalog,
+    cfg: &Config,
+    assets: &[i64],
+    preset: &Path,
+    outputs: &Outputs,
+    video: VideoPrint,
+    events: EventSink,
+    cancel: &Cancel,
+) -> anyhow::Result<PrintReport> {
     if !outputs.jpeg && !outputs.exr {
         anyhow::bail!("choose JPEG and/or EXR output");
     }
@@ -331,6 +444,7 @@ pub fn print_assets(cat: &Catalog, cfg: &Config, assets: &[i64], preset: &Path, 
     let mut report = PrintReport { requested: assets.len(), ..Default::default() };
 
     let mut tasks = Vec::new();
+    let mut clips: Vec<(Source, String)> = Vec::new();
     let mut taken = HashSet::new();
     let mut planned: Vec<(i64, Option<String>, Option<String>)> = Vec::new();
     for &asset in assets {
@@ -344,6 +458,13 @@ pub fn print_assets(cat: &Catalog, cfg: &Config, assets: &[i64], preset: &Path, 
         };
         let ctx = context(&src, &preset);
         let mut rel_for = |t: &Template| -> anyhow::Result<String> { choose_rel(cat, render_root_id, &render_root, t.render(&ctx)?, asset, &preset, &mut taken) };
+        if src.is_video {
+            // A clip is rendered frame by frame; the template names it, with the codec's own
+            // extension in place of the stills one.
+            let rel = with_extension(&rel_for(&cfg.templates.render_jpeg)?, video.codec.extension());
+            clips.push((src, rel));
+            continue;
+        }
         let jpeg = outputs.jpeg.then(|| rel_for(&cfg.templates.render_jpeg)).transpose()?;
         let exr = outputs.exr.then(|| rel_for(&cfg.templates.render_exr)).transpose()?;
         tasks.push(RenderTask {
@@ -357,6 +478,7 @@ pub fn print_assets(cat: &Catalog, cfg: &Config, assets: &[i64], preset: &Path, 
     }
 
     let results = render_tasks(tasks, &preset, cfg, outputs, events.clone(), cancel)?;
+    print_clips(cat, cfg, &clips, &preset, video, render_root_id, &render_root, &mut report, &events, cancel)?;
     let record = preset.record();
     cat.conn().execute(
         "INSERT OR IGNORE INTO presets (hash, name, record, added_at) VALUES (?1, ?2, ?3, ?4)",

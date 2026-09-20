@@ -140,6 +140,18 @@ class Library {
 
   // ---------- listing ----------
 
+  /** A loaded summary by id, when the page holding it is in the cache. */
+  itemById(id: number): AssetSummary | undefined {
+    for (const [, items] of this.pages) {
+      const hit = items.find((a) => a.id === id);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
+
+  /** The clip the render dialog is open for. */
+  renderClip = $state<number | null>(null);
+
   item(index: number): AssetSummary | undefined {
     return this.pages.get(Math.floor(index / PAGE))?.[index % PAGE];
   }
@@ -220,7 +232,7 @@ class Library {
     this.reload();
   }
 
-  toggle(key: "cameras" | "keywords" | "roots", value: string | number) {
+  toggle(key: "cameras" | "keywords" | "roots" | "kinds", value: string | number) {
     const cur = (this.filter[key] ?? []) as (string | number)[];
     const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
     this.setFilter({ [key]: next } as Partial<Filter>);

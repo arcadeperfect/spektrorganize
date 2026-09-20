@@ -11,6 +11,11 @@
   let jpeg = $state(true);
   let exr = $state(false);
   let cameraJpeg = $state(false);
+  /** Clips in the selection are rendered frame by frame; these say how. */
+  const clips = $derived(ids.filter((id) => lib.itemById(id)?.kind === "video").length);
+  let clipLook = $state<"lut" | "full">("lut");
+  let clipCodec = $state<"h264" | "hevc" | "pro_res422" | "pro_res4444">("h264");
+  let clipPx = $state(1920);
 
   onMount(async () => {
     presets = await api.listPresets();
@@ -24,7 +29,14 @@
 
   function run() {
     if (!preset || (!jpeg && !exr)) return;
-    store.startPrint({ ids, preset, jpeg, exr, camera_jpeg: cameraJpeg });
+    store.startPrint({
+      ids,
+      preset,
+      jpeg,
+      exr,
+      camera_jpeg: cameraJpeg,
+      video: clips ? { look: clipLook, codec: clipCodec, max_px: clipPx, mbps: 12 } : undefined,
+    });
     lib.note = null;
     onclose();
   }
@@ -38,7 +50,7 @@
 
 <div class="backdrop" role="presentation" onclick={onclose}></div>
 <div class="dialog card stack" role="dialog" aria-modal="true" aria-label="Print">
-  <h1>Print {ids.length} photo{ids.length === 1 ? "" : "s"}</h1>
+  <h1>Print {ids.length} {ids.length === 1 ? "item" : "items"}</h1>
   <p class="muted small">
     Each photo is developed with its own settings, then printed with the look you choose, into <span class="mono">{store.config?.render_root}</span>, named by the render templates in Settings. A second look never overwrites
     the first: the preset name is added to the file name. Photos without a RAW are printed from their camera JPEG.
@@ -60,6 +72,32 @@
     <input type="checkbox" bind:checked={cameraJpeg} />
     <span>Also copy the camera JPEG when the photo has one</span>
   </label>
+  {#if clips}
+    <div class="clips stack tight">
+      <span class="small">{clips} {clips === 1 ? "clip" : "clips"} in this selection</span>
+      <div class="row">
+        <button class="mini" class:on={clipLook === "lut"} onclick={() => (clipLook = "lut")}>baked LUT</button>
+        <button class="mini" class:on={clipLook === "full"} onclick={() => (clipLook = "full")}>full pipeline</button>
+        <select bind:value={clipCodec}>
+          <option value="h264">H.264</option>
+          <option value="hevc">HEVC</option>
+          <option value="pro_res422">ProRes 422</option>
+          <option value="pro_res4444">ProRes 4444</option>
+        </select>
+        <select bind:value={clipPx}>
+          <option value={0}>as shot</option>
+          <option value={1080}>1080</option>
+          <option value={1920}>1920</option>
+          <option value={3840}>3840</option>
+        </select>
+      </div>
+      <span class="muted small">
+        {clipLook === "lut"
+          ? "The look baked into a colour cube: fast, but no grain or halation — a cube cannot carry them."
+          : "The whole pipeline on every frame, grain and all, at minutes per clip."} Rendered clips have no sound yet.
+      </span>
+    </div>
+  {/if}
   {#if store.busy}<div class="warn small">Another job is running; wait for it to finish.</div>{/if}
   <div class="row end">
     <button onclick={onclose}>Cancel</button>
@@ -91,5 +129,13 @@
   }
   .small {
     font-size: 11.5px;
+  }
+  .clips {
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+  }
+  .clips .on {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
   }
 </style>

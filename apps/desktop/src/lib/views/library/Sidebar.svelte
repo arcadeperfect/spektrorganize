@@ -6,6 +6,9 @@
   import { store } from "../../state.svelte";
 
   const f = $derived(lib.filter);
+
+  /** What the catalog calls each kind, in words. */
+  const KIND_NAMES: Record<string, string> = { raw: "RAW", image: "JPEG & images", video: "Video", other: "Other" };
   const facets = $derived(lib.facets);
   const folders = $derived(facets?.roots.filter((r) => r.kind !== "render") ?? []);
 
@@ -294,6 +297,21 @@
             <span class="muted">Undated</span><span class="n">{facets.undated}</span>
           </button>
         {/if}{/if}
+    </section>
+    {/if}
+
+    {#if facets.kinds.length > 1}
+      <section>
+      <h3>
+        <button class="twist sect" onclick={() => toggleSection("Kinds")} title="Show or hide">{closed.has("Kinds") ? "▸" : "▾"}</button>
+        <span>Kinds</span>
+      </h3>
+      {#if !closed.has("Kinds")}
+        {#each facets.kinds as k (k.key)}
+          <button class="item" class:active={f.kinds?.includes(k.key)} onclick={() => lib.toggle("kinds", k.key)}>
+            <span>{KIND_NAMES[k.key] ?? k.key}</span><span class="n">{k.count}</span>
+          </button>
+        {/each}{/if}
     </section>
     {/if}
 

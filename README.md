@@ -126,6 +126,12 @@ Playback streams over a `clip://` protocol the app serves itself, by catalog fil
 byte ranges, because the webview cannot read the archive and widening its file access would be
 worse.
 
+Clips **print** like photos: select them and press Print, and each is rendered into the render
+root under the render template's name (with the codec's extension), recorded as a `renders` row
+and badged like any other print. The print dialog gains the clip options when the selection holds
+any. A single clip can also be rendered to a path you choose — right-click → Render this clip, or
+Render… in the full-screen view.
+
 **Rendering a look onto a clip** (Render… in the full-screen view) comes two ways:
 
 - **Baked LUT** — the preset is run once over a colour cube and applied per frame. Fast enough
