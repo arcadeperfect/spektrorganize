@@ -147,7 +147,7 @@ pub async fn look_neutralize(app: AppHandle, preset: Preset) -> Result<(f32, f32
 /// Live preview of catalog photo `id` through `preset` with `raw` settings,
 /// as a JPEG data URL. Renders are serialised; a newer request simply waits.
 #[tauri::command]
-pub async fn look_preview(app: AppHandle, id: i64, preset: Preset, raw: RawSettings, max_px: u32) -> Result<String> {
+pub async fn look_preview(app: AppHandle, id: i64, preset: Preset, raw: RawSettings, max_px: u32, at: Option<f64>) -> Result<String> {
     tauri::async_runtime::spawn_blocking(move || {
         let raw_path = {
             let st = app.state::<CatalogState>();
@@ -158,7 +158,7 @@ pub async fn look_preview(app: AppHandle, id: i64, preset: Preset, raw: RawSetti
         let looks = app.state::<LookState>();
         let mut engine = looks.engine.lock().unwrap();
         let engine = engine.get_or_insert_with(PreviewEngine::default);
-        let jpg = engine.render(&raw_path, &raw, &preset, &dir, max_px.clamp(256, 16384)).map_err(|e| format!("{e:#}"))?;
+        let jpg = engine.render(&raw_path, &raw, &preset, &dir, max_px.clamp(256, 16384), at).map_err(|e| format!("{e:#}"))?;
         use base64::Engine;
         Ok(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(jpg)))
     })
@@ -169,7 +169,7 @@ pub async fn look_preview(app: AppHandle, id: i64, preset: Preset, raw: RawSetti
 /// The develop stage's own output for a photo: decode + develop settings,
 /// no film look.
 #[tauri::command]
-pub async fn develop_preview(app: AppHandle, id: i64, raw: RawSettings, max_px: u32) -> Result<String> {
+pub async fn develop_preview(app: AppHandle, id: i64, raw: RawSettings, max_px: u32, at: Option<f64>) -> Result<String> {
     tauri::async_runtime::spawn_blocking(move || {
         let raw_path = {
             let st = app.state::<CatalogState>();
@@ -179,7 +179,7 @@ pub async fn develop_preview(app: AppHandle, id: i64, raw: RawSettings, max_px: 
         let looks = app.state::<LookState>();
         let mut engine = looks.engine.lock().unwrap();
         let engine = engine.get_or_insert_with(PreviewEngine::default);
-        let jpg = engine.render_developed(&raw_path, &raw, max_px.clamp(256, 16384)).map_err(|e| format!("{e:#}"))?;
+        let jpg = engine.render_developed(&raw_path, &raw, max_px.clamp(256, 16384), at).map_err(|e| format!("{e:#}"))?;
         use base64::Engine;
         Ok(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(jpg)))
     })
@@ -189,7 +189,7 @@ pub async fn develop_preview(app: AppHandle, id: i64, raw: RawSettings, max_px: 
 
 /// The "before" image for the print editor: the developed photo at the look's exposure.
 #[tauri::command]
-pub async fn look_preview_before(app: AppHandle, id: i64, preset: Preset, raw: RawSettings, max_px: u32) -> Result<String> {
+pub async fn look_preview_before(app: AppHandle, id: i64, preset: Preset, raw: RawSettings, max_px: u32, at: Option<f64>) -> Result<String> {
     tauri::async_runtime::spawn_blocking(move || {
         let raw_path = {
             let st = app.state::<CatalogState>();
@@ -200,7 +200,7 @@ pub async fn look_preview_before(app: AppHandle, id: i64, preset: Preset, raw: R
         let looks = app.state::<LookState>();
         let mut engine = looks.engine.lock().unwrap();
         let engine = engine.get_or_insert_with(PreviewEngine::default);
-        let jpg = engine.render_before(&raw_path, &raw, &preset, &dir, max_px.clamp(256, 16384)).map_err(|e| format!("{e:#}"))?;
+        let jpg = engine.render_before(&raw_path, &raw, &preset, &dir, max_px.clamp(256, 16384), at).map_err(|e| format!("{e:#}"))?;
         use base64::Engine;
         Ok(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(jpg)))
     })
@@ -218,21 +218,39 @@ pub struct InputInfo {
     /// Pixel size from the catalog, so the viewer knows what "full resolution" means.
     width: Option<i64>,
     height: Option<i64>,
+    /// A clip: previewed on one frame, and printed by rendering all of them.
+    is_video: bool,
+    /// How long that clip runs, for the frame picker.
+    duration: Option<f64>,
 }
 
 #[tauri::command]
 pub fn asset_input(st: State<CatalogState>, id: i64) -> Result<InputInfo> {
     let db = st.db.lock().unwrap();
     let (width, height) = db.dimensions(id).unwrap_or((None, None));
+    let duration = db
+        .conn()
+        .query_row("SELECT duration FROM assets WHERE id = ?1", [id], |r| r.get::<_, Option<f64>>(0))
+        .unwrap_or(None);
     match spektro_core::catalog::print::raw_path(&db, id).map_err(err)? {
         Ok(p) => Ok(InputInfo {
             is_raw: spektro_core::decode::is_raw_path(&p),
+            is_video: spektro_core::video::is_video_path(&p),
             file: p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
             error: None,
             width,
             height,
+            duration,
         }),
-        Err(why) => Ok(InputInfo { is_raw: false, file: String::new(), error: Some(why), width, height }),
+        Err(why) => Ok(InputInfo {
+            is_raw: false,
+            is_video: false,
+            file: String::new(),
+            error: Some(why),
+            width,
+            height,
+            duration,
+        }),
     }
 }
 

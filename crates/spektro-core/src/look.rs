@@ -106,6 +106,8 @@ pub fn neutralize_filters(preset: &Preset, data_dir: &Path) -> anyhow::Result<(f
 #[derive(Clone, PartialEq)]
 struct DecodeKey {
     path: PathBuf,
+    /// Which frame of a clip, in hundredths of a second; `None` for a photo.
+    frame: Option<i64>,
     as_shot: bool,
     highlight: i32,
     demosaic: Option<i32>,
@@ -127,9 +129,10 @@ impl Default for PreviewEngine {
 }
 
 impl PreviewEngine {
-    fn decode(&mut self, raw_path: &Path, raw: &RawSettings, max_px: u32) -> anyhow::Result<LinearImage> {
+    fn decode(&mut self, raw_path: &Path, raw: &RawSettings, max_px: u32, at: Option<f64>) -> anyhow::Result<LinearImage> {
         let key = DecodeKey {
             path: raw_path.to_path_buf(),
+            frame: at.map(|t| (t * 100.0) as i64),
             as_shot: raw.white_balance == WhiteBalance::AsShot,
             highlight: raw.highlight,
             demosaic: raw.demosaic,
@@ -139,6 +142,26 @@ impl PreviewEngine {
             let entry = self.decodes.remove(pos);
             let img = entry.1.clone();
             self.decodes.push(entry);
+            return Ok(img);
+        }
+        // A clip previews on one of its frames: the look is the same, and seeing it on the
+        // picture beats seeing it on nothing.
+        if crate::video::is_video_path(raw_path) {
+            let meta = crate::video::probe(raw_path)?;
+            let at = at.unwrap_or_else(|| (meta.duration * 0.1).min(2.0));
+            let (rgb, w, h) = crate::video::frame_rgb8(raw_path, at, max_px)?;
+            let srgb = spektrafilm_math::colourspaces::lookup("sRGB").map_err(|e| anyhow::anyhow!(e))?;
+            let lut: Vec<f32> = (0..256).map(|v| srgb.cctf.decode(v as f64 / 255.0) as f32).collect();
+            let img = LinearImage {
+                width: w,
+                height: h,
+                data: rgb.iter().map(|v| lut[*v as usize]).collect(),
+                color_space: "sRGB",
+            };
+            self.decodes.push((key, img.clone()));
+            if self.decodes.len() > 4 {
+                self.decodes.remove(0);
+            }
             return Ok(img);
         }
         if !crate::decode::is_raw_path(raw_path) {
@@ -191,8 +214,16 @@ impl PreviewEngine {
 
     /// Render `raw_path` through `preset` at most `max_px` on the long edge,
     /// as sRGB JPEG bytes.
-    pub fn render(&mut self, raw_path: &Path, raw: &RawSettings, preset: &Preset, data_dir: &Path, max_px: u32) -> anyhow::Result<Vec<u8>> {
-        let mut img = self.decode(raw_path, raw, max_px)?;
+    pub fn render(
+        &mut self,
+        raw_path: &Path,
+        raw: &RawSettings,
+        preset: &Preset,
+        data_dir: &Path,
+        max_px: u32,
+        at: Option<f64>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut img = self.decode(raw_path, raw, max_px, at)?;
         // The decode above used LibRaw's own balance; now the adaptation,
         // tint and exposure.
         apply_raw_adjustments(&mut img, raw);
@@ -205,8 +236,8 @@ impl PreviewEngine {
 
     /// The developed photo: decode plus its develop settings, colour-managed
     /// to sRGB. This is the develop stage's own output — no film look.
-    pub fn render_developed(&mut self, raw_path: &Path, raw: &RawSettings, max_px: u32) -> anyhow::Result<Vec<u8>> {
-        let mut img = self.decode(raw_path, raw, max_px)?;
+    pub fn render_developed(&mut self, raw_path: &Path, raw: &RawSettings, max_px: u32, at: Option<f64>) -> anyhow::Result<Vec<u8>> {
+        let mut img = self.decode(raw_path, raw, max_px, at)?;
         apply_raw_adjustments(&mut img, raw);
         self.to_srgb_jpeg(crate::geometry::apply(img, raw))
     }
@@ -214,8 +245,16 @@ impl PreviewEngine {
     /// The print stage's "before": the developed photo at the exposure the
     /// look itself applies (autoexposure + compensation), so the toggle shows
     /// only what the film does.
-    pub fn render_before(&mut self, raw_path: &Path, raw: &RawSettings, preset: &Preset, data_dir: &Path, max_px: u32) -> anyhow::Result<Vec<u8>> {
-        let mut img = self.decode(raw_path, raw, max_px)?;
+    pub fn render_before(
+        &mut self,
+        raw_path: &Path,
+        raw: &RawSettings,
+        preset: &Preset,
+        data_dir: &Path,
+        max_px: u32,
+        at: Option<f64>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut img = self.decode(raw_path, raw, max_px, at)?;
         apply_raw_adjustments(&mut img, raw);
         let mut img = crate::geometry::apply(img, raw);
         let pipeline = self.pipeline(preset, data_dir, img.color_space)?;

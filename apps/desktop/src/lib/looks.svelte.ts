@@ -272,8 +272,9 @@ class Looks {
       if (develop.id !== null) {
         const t = performance.now();
         const px = develop.detail;
-        if (this.showBefore && !this.before) this.before = await backend.previewBefore(develop.id, look, raw, px);
-        this.preview = await backend.preview(develop.id, look, raw, px);
+        const at = develop.frameAt;
+        if (this.showBefore && !this.before) this.before = await backend.previewBefore(develop.id, look, raw, px, at);
+        this.preview = await backend.preview(develop.id, look, raw, px, at);
         this.renderMs = Math.round(performance.now() - t);
       }
     } catch (e) {

@@ -3,7 +3,7 @@
   // catalog photo (with that photo's RAW settings), save it, print with it.
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { api, catalog, looks as lookApi } from "../api";
+  import { api, catalog, duration as durationText, looks as lookApi } from "../api";
   import { lookEditor as L, getPath, ROUTE_PRINT, ROUTE_SCAN } from "../looks.svelte";
   import { develop as D } from "../photo.svelte";
   import { library as lib } from "../library.svelte";
@@ -181,7 +181,7 @@
         {#if L.showBefore}<div class="tag">After (loading before…)</div>{/if}
         {#if L.error}<div class="bad err">{L.error}</div>{/if}
       {:else if L.error}
-        <div class="bad empty">Can't preview this photo: {L.error}</div>
+        <div class="bad empty">Can't preview this {D.isVideo ? "clip" : "photo"}: {L.error}</div>
       {:else}
         <div class="muted empty">Decoding…</div>
       {/if}
@@ -194,6 +194,21 @@
         </button>
       </div>
     </div>
+      {#if D.isVideo && D.input?.duration}
+        <div class="frame row">
+          <span class="muted small">frame</span>
+          <input
+            type="range"
+            min="0"
+            max={D.input.duration}
+            step="0.04"
+            value={D.frameAt ?? Math.min(D.input.duration * 0.1, 2)}
+            oninput={(e) => D.setFrame(Number((e.currentTarget as HTMLInputElement).value), () => L.refresh())}
+          />
+          <span class="muted small mono">{(D.frameAt ?? Math.min(D.input.duration * 0.1, 2)).toFixed(2)}s</span>
+          <span class="muted small">of {durationText(D.input.duration)} — the look previews on one frame; Print renders them all</span>
+        </div>
+      {/if}
     {#if candidates.length > 1}
       <div class="strip">
         {#each candidates as id (id)}
@@ -218,7 +233,7 @@
     {#if L.meta && L.effective}
       <div class="from-develop row spread">
         <span class="small">
-          Developed: {D.isRaw ? D.raw.white_balance.replace("_", " ") : "camera JPEG"}{D.raw.exposure_ev !== 0 ? `, ${D.raw.exposure_ev > 0 ? "+" : ""}${D.raw.exposure_ev.toFixed(2)} EV` : ""}
+          Developed: {D.isVideo ? "video frame" : D.isRaw ? D.raw.white_balance.replace("_", " ") : "camera JPEG"}{D.raw.exposure_ev !== 0 ? `, ${D.raw.exposure_ev > 0 ? "+" : ""}${D.raw.exposure_ev.toFixed(2)} EV` : ""}
         </span>
         <button class="ghost small" onclick={() => (store.view = "develop")}>Develop…</button>
       </div>
@@ -501,5 +516,13 @@
   .full.on {
     color: var(--accent-2);
     border-color: var(--accent-2);
+  }
+  .frame {
+    padding: 6px 10px 0;
+    gap: 8px;
+  }
+  .frame input[type="range"] {
+    flex: 1;
+    min-width: 0;
   }
 </style>

@@ -577,10 +577,13 @@ export interface ImportedLook {
 
 export interface InputInfo {
   is_raw: boolean;
+  /** A clip: previewed on one frame, printed by rendering all of them. */
+  is_video: boolean;
   file: string;
   error: string | null;
   width: number | null;
   height: number | null;
+  duration: number | null;
 }
 
 /** Preset reference meaning "develop only, no film look". */
@@ -597,11 +600,12 @@ export const looks = {
   importText: (text: string) => invoke<ImportedLook>("look_import_text", { text }),
   resolve: (preset: Look) => invoke<Record<string, any>>("look_resolve", { preset }),
   neutralize: (preset: Look) => invoke<[number, number]>("look_neutralize", { preset }),
-  preview: (id: number, preset: Look, raw: RawSettings, maxPx: number) =>
-    invoke<string>("look_preview", { id, preset, raw, maxPx }),
-  developPreview: (id: number, raw: RawSettings, maxPx: number) => invoke<string>("develop_preview", { id, raw, maxPx }),
-  previewBefore: (id: number, preset: Look, raw: RawSettings, maxPx: number) =>
-    invoke<string>("look_preview_before", { id, preset, raw, maxPx }),
+  preview: (id: number, preset: Look, raw: RawSettings, maxPx: number, at?: number | null) =>
+    invoke<string>("look_preview", { id, preset, raw, maxPx, at: at ?? null }),
+  developPreview: (id: number, raw: RawSettings, maxPx: number, at?: number | null) =>
+    invoke<string>("develop_preview", { id, raw, maxPx, at: at ?? null }),
+  previewBefore: (id: number, preset: Look, raw: RawSettings, maxPx: number, at?: number | null) =>
+    invoke<string>("look_preview_before", { id, preset, raw, maxPx, at: at ?? null }),
   /** Render a clip through a look; progress arrives as `video-progress`. */
   videoRender: (
     asset: number,

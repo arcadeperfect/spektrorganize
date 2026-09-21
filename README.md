@@ -126,6 +126,11 @@ Playback streams over a `clip://` protocol the app serves itself, by catalog fil
 byte ranges, because the webview cannot read the archive and widening its file access would be
 worse.
 
+A clip **previews** in Develop and Print like a photo, on one of its frames: the same look, the
+same before/after toggle, the same zoom. A frame slider under the stage picks which one — the
+poster frame by default, which is a tenth of the way in. Scrubbing waits for the handle to settle
+before decoding.
+
 Clips **print** like photos: select them and press Print, and each is rendered into the render
 root under the render template's name (with the codec's extension), recorded as a `renders` row
 and badged like any other print. The print dialog gains the clip options when the selection holds

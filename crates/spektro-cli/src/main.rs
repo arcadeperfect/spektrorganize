@@ -415,9 +415,9 @@ fn main() -> anyhow::Result<()> {
             for i in 0..(*repeat).max(1) {
                 let t = std::time::Instant::now();
                 let jpg = if *before {
-                    engine.render_before(raw, &raw_settings, &look, &data_dir, *max)?
+                    engine.render_before(raw, &raw_settings, &look, &data_dir, *max, None)?
                 } else {
-                    engine.render(raw, &raw_settings, &look, &data_dir, *max)?
+                    engine.render(raw, &raw_settings, &look, &data_dir, *max, None)?
                 };
                 std::fs::write(out, &jpg)?;
                 println!("preview {} in {:.0} ms ({})", i + 1, t.elapsed().as_secs_f64() * 1000.0, engine.backend_name());

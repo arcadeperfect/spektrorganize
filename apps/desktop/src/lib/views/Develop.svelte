@@ -3,7 +3,7 @@
   // highlights), with nothing filmic on top. Saved with the photo, so every
   // print of it starts here.
   import { onMount } from "svelte";
-  import { api, catalog, DEVELOPED_ONLY } from "../api";
+  import { api, catalog, duration as durationText, DEVELOPED_ONLY } from "../api";
   import { develop as D } from "../photo.svelte";
   import { library as lib } from "../library.svelte";
   import { store } from "../state.svelte";
@@ -168,6 +168,21 @@
         </button>
       </div>
     </div>
+      {#if D.isVideo && D.input?.duration}
+        <div class="frame row">
+          <span class="muted small">frame</span>
+          <input
+            type="range"
+            min="0"
+            max={D.input.duration}
+            step="0.04"
+            value={D.frameAt ?? Math.min(D.input.duration * 0.1, 2)}
+            oninput={(e) => D.setFrame(Number((e.currentTarget as HTMLInputElement).value), () => D.refresh())}
+          />
+          <span class="muted small mono">{(D.frameAt ?? Math.min(D.input.duration * 0.1, 2)).toFixed(2)}s</span>
+          <span class="muted small">of {durationText(D.input.duration)} — the look previews on one frame; Print renders them all</span>
+        </div>
+      {/if}
     {#if candidates.length > 1}
       <div class="strip">
         {#each candidates as id (id)}
@@ -183,7 +198,10 @@
 
   <aside class="controls">
     <p class="muted small note">
-      {#if D.isRaw}
+      {#if D.isVideo}
+        A clip: what you set here applies to a frame of it, and to every frame when it is printed. Its colour is already baked in, so only exposure
+        applies.
+      {:else if D.isRaw}
         An honest decode: camera white balance and no tone curve. What you set here is saved with the photo and used everywhere — exports and prints alike.
       {:else}
         A camera JPEG: nothing to decode, its colour is already baked in. Only exposure applies. Saved with the photo.
@@ -437,5 +455,13 @@
   .geo .on {
     color: var(--accent-2);
     border-color: var(--accent-2);
+  }
+  .frame {
+    padding: 6px 10px 0;
+    gap: 8px;
+  }
+  .frame input[type="range"] {
+    flex: 1;
+    min-width: 0;
   }
 </style>

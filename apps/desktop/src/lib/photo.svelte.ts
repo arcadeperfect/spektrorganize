@@ -46,8 +46,28 @@ class DevelopStage {
   private zoomTimer: ReturnType<typeof setTimeout> | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private frameTimer: ReturnType<typeof setTimeout> | null = null;
   /** A control is being dragged right now, so the preview stays small. */
   dragging = $state(false);
+
+  /** A clip: previews show one frame of it. */
+  get isVideo(): boolean {
+    return this.input?.is_video ?? false;
+  }
+
+  /** Which frame of a clip the previews show, in seconds. Null is the poster frame. */
+  frameAt = $state<number | null>(null);
+
+  /** Move to another frame of the clip and re-render whatever stage is in view. */
+  setFrame(at: number, then: () => void) {
+    this.frameAt = at;
+    if (this.frameTimer) clearTimeout(this.frameTimer);
+    // Scrubbing asks for a decode per position; wait for the handle to settle.
+    this.frameTimer = setTimeout(() => {
+      this.frameTimer = null;
+      then();
+    }, 180);
+  }
 
   /** The photo's own longest side, 0 when the catalog never recorded it. */
   get native(): number {
@@ -93,6 +113,7 @@ class DevelopStage {
     this.preview = null;
     this.error = null;
     this.input = id === null ? null : await backend.input(id).catch(() => null);
+    this.frameAt = null;
     this.detail = this.full ? (this.native > 0 ? Math.min(this.native, 16384) : 16384) : BASE_PX;
     this.raw = id === null ? defaultRaw() : await backend.rawGet(id).catch(() => defaultRaw());
     this.version++;
@@ -168,7 +189,7 @@ class DevelopStage {
       const raw = this.showWholeFrame ? { ...this.raw, crop: null } : { ...this.raw };
       // Dragging: a smaller render keeps up with the pointer. The settled one follows.
       const px = this.dragging ? Math.min(this.detail, DRAG_PX) : this.detail;
-      this.preview = await backend.developPreview(this.id, raw, px);
+      this.preview = await backend.developPreview(this.id, raw, px, this.frameAt);
       this.error = null;
     } catch (e) {
       this.error = String(e);

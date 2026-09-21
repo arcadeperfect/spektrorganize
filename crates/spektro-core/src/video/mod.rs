@@ -93,6 +93,12 @@ pub fn poster_jpeg(path: &Path, max_px: u32, quality: u8) -> Result<Vec<u8>, Vid
     Ok(out)
 }
 
+/// Whether a path looks like a clip we can read.
+pub fn is_video_path(path: &Path) -> bool {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "mp4" | "mov" | "m4v" | "avi" | "mts" | "m2ts" | "mxf" | "3gp")
+}
+
 /// Whether this build can do anything with video at all.
 pub const fn supported() -> bool {
     cfg!(target_os = "macos")
