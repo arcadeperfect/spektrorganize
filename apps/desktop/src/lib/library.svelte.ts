@@ -40,6 +40,8 @@ class Library {
   filter = $state<Filter>({});
   sort = $state<SortKey>("captured_desc");
   tile = $state(168);
+  /** Tiles past this ask for the 1024 px thumbnails instead of the 256 px ones. */
+  static readonly BIG_TILE = 220;
   facets = $state<Facets | null>(null);
   total = $state(0);
   loaded = $state(false);
@@ -226,6 +228,15 @@ class Library {
 
   // ---------- filter ----------
 
+  /** Called when the tile size changes: past the threshold the grid wants other thumbnails. */
+  retileThumbs(before: number) {
+    const was = before > Library.BIG_TILE;
+    const now = this.tile > Library.BIG_TILE;
+    if (was === now) return;
+    this.thumbs.clear();
+    this.requested.clear();
+  }
+
   setFilter(patch: Partial<Filter>) {
     this.filter = { ...this.filter, ...patch };
     this.openCollection = null;
@@ -290,7 +301,8 @@ class Library {
     if (!ids.length) return;
     ids.forEach((id) => this.requested.add(id));
     try {
-      const known = await catalog.requestThumbs(ids);
+      const size = this.tile > Library.BIG_TILE ? 1024 : 256;
+      const known = await catalog.requestThumbs(ids, false, size);
       for (const t of known) {
         this.thumbs.set(t.id, t.path);
         this.requested.delete(t.id);
@@ -302,8 +314,9 @@ class Library {
   }
 
   private onThumbs(batch: ThumbReady[]) {
+    const want = this.tile > Library.BIG_TILE ? 1024 : 256;
     for (const t of batch) {
-      if (t.size !== 256) continue;
+      if (t.size !== want) continue;
       this.thumbs.set(t.id, t.path);
       this.requested.delete(t.id);
     }

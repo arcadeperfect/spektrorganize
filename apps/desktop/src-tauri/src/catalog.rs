@@ -250,18 +250,20 @@ pub fn catalog_remove_root(app: AppHandle, st: State<CatalogState>, root: i64) -
 /// Thumbnails for what is on screen: missing ones are queued ahead of the background work (and
 /// arrive as `thumbs-ready`); ones that exist already are returned right away.
 #[tauri::command]
-pub fn catalog_request_thumbs(st: State<CatalogState>, ids: Vec<i64>, force: bool) -> Result<Vec<ThumbReady>> {
+pub fn catalog_request_thumbs(st: State<CatalogState>, ids: Vec<i64>, force: bool, size: Option<u32>) -> Result<Vec<ThumbReady>> {
+    // Big tiles want the 1024 px thumbnails; small ones would only be slower for it.
+    let size = if size.unwrap_or(0) > thumbs::SMALL { thumbs::LARGE } else { thumbs::SMALL };
     let db = st.db.lock().unwrap();
-    let jobs = thumbs::jobs(db.conn(), &st.thumbs_dir, Some(&ids), thumbs::SMALL, force).map_err(err)?;
+    let jobs = thumbs::jobs(db.conn(), &st.thumbs_dir, Some(&ids), size, force).map_err(err)?;
     let queued: std::collections::HashSet<i64> = jobs.iter().map(|j| j.asset).collect();
     let mut known = Vec::new();
     {
         let mut stmt = db.conn().prepare_cached("SELECT path FROM thumbnails WHERE asset_id = ?1 AND size = ?2").map_err(err)?;
         for id in ids.iter().filter(|id| !queued.contains(id)) {
             use rusqlite::OptionalExtension as _;
-            let row: Option<Option<String>> = stmt.query_row(rusqlite::params![id, thumbs::SMALL], |r| r.get(0)).optional().map_err(err)?;
+            let row: Option<Option<String>> = stmt.query_row(rusqlite::params![id, size], |r| r.get(0)).optional().map_err(err)?;
             // No row and no job: nothing to preview (video, offline drive).
-            known.push(ThumbReady { id: *id, size: thumbs::SMALL, path: row.flatten() });
+            known.push(ThumbReady { id: *id, size, path: row.flatten() });
         }
     }
     drop(db);

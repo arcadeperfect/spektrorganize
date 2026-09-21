@@ -87,7 +87,19 @@
         <option value={v as SortKey}>{l}</option>
       {/each}
     </select>
-    <input type="range" min="110" max="340" bind:value={lib.tile} title="Thumbnail size" class="size" />
+    <input
+      type="range"
+      min="110"
+      max="640"
+      value={lib.tile}
+      oninput={(e) => {
+        const was = lib.tile;
+        lib.tile = Number((e.currentTarget as HTMLInputElement).value);
+        lib.retileThumbs(was);
+      }}
+      title="Thumbnail size"
+      class="size"
+    />
     <button onclick={addFolder} disabled={!!lib.indexing} title="Index an existing folder in place">+ Add folder…</button>
     <button onclick={() => (store.view = "source")} title="Copy from a card or folder into the archive, organised by your templates">Import…</button>
     <button class="ai" onclick={() => lib.askLabel()} disabled={!!lib.labelRun || lib.total === 0} title={lib.selected.size ? "AI keywords for the selection (replaces their AI keywords)" : "AI keywords for everything unlabelled in this view"}>

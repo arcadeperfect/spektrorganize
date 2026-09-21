@@ -274,8 +274,10 @@
     opacity: 0.5;
   }
   img {
-    max-width: 100%;
-    max-height: 100%;
+    /* Fill the tile: with max-width alone a 256 px thumbnail sat small and
+       centred in a large cell instead of scaling up to it. */
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     display: block;
   }

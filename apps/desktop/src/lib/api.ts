@@ -414,7 +414,8 @@ export const catalog = {
   relocateRoot: (root: number, path: string, force: boolean) =>
     invoke<{ checked: number; found: number }>("catalog_relocate_root", { root, path, force }),
   removeRoot: (root: number) => invoke<void>("catalog_remove_root", { root }),
-  requestThumbs: (ids: number[], force = false) => invoke<ThumbReady[]>("catalog_request_thumbs", { ids, force }),
+  requestThumbs: (ids: number[], force = false, size?: number) =>
+    invoke<ThumbReady[]>("catalog_request_thumbs", { ids, force, size: size ?? null }),
   preview: (id: number) => invoke<string | null>("catalog_preview", { id }),
   previewPx: (id: number, maxPx: number) => invoke<string | null>("catalog_preview_px", { id, maxPx }),
   /** A clip, streamed by the app so the player can seek without the file being web-readable. */
