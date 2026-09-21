@@ -66,6 +66,30 @@
     }
   });
 
+  /**
+   * The first photo in view. Scroll is kept in pixels, but the row height
+   * changes with the tile size (and the column count with the window), so the
+   * same pixel position means a different photo afterwards. Re-derive the
+   * position from this photo whenever the layout changes.
+   */
+  let anchorIndex = 0;
+  let layout = untrack(() => `${cols}x${rowH}`);
+  $effect(() => {
+    const now = `${cols}x${rowH}`;
+    if (now === layout) return;
+    layout = now;
+    if (!scroller || lib.scroll === 0) return;
+    const top = PAD + Math.floor(anchorIndex / cols) * rowH;
+    scroller.scrollTop = top;
+    scrollTop = top;
+    lib.scroll = top;
+  });
+
+  /** Remember which photo is at the top, under the geometry in force right now. */
+  function noteAnchor() {
+    anchorIndex = Math.max(0, Math.floor((scrollTop - PAD) / rowH)) * cols;
+  }
+
   // A new filter starts at the top — but only a new one. `resets` is already
   // non-zero when the grid mounts, so compare against what we last saw,
   // otherwise every return to the Library would jump to the top.
@@ -148,7 +172,7 @@
 <div
   class="scroller"
   bind:this={scroller}
-  onscroll={() => scroller && ((scrollTop = scroller.scrollTop), (lib.scroll = scrollTop))}
+  onscroll={() => scroller && ((scrollTop = scroller.scrollTop), (lib.scroll = scrollTop), noteAnchor())}
   onkeydown={onKey}
   tabindex="0"
   role="listbox"
