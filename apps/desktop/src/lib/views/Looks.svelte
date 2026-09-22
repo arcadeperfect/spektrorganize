@@ -197,7 +197,7 @@
       </div>
     </div>
       {#if D.isVideo && D.input?.duration}
-        <div class="frame row">
+        <div class="picker row">
           <span class="muted small">frame</span>
           <input
             type="range"
@@ -519,11 +519,11 @@
     color: var(--accent-2);
     border-color: var(--accent-2);
   }
-  .frame {
+  .picker {
     padding: 6px 10px 0;
     gap: 8px;
   }
-  .frame input[type="range"] {
+  .picker input[type="range"] {
     flex: 1;
     min-width: 0;
   }

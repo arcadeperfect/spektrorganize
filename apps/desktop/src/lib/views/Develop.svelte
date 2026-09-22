@@ -70,6 +70,42 @@
   }
 
   let imgEl = $state<HTMLImageElement | undefined>();
+  let frameEl = $state<HTMLDivElement | undefined>();
+  /** The decoded picture's own pixel size, for the readout and for spotting a decode that lost edges. */
+  let decoded = $state<[number, number] | null>(null);
+  /**
+   * Where the picture actually sits inside its box once `object-fit: contain`
+   * has letterboxed it — in layout pixels, which is what the overlay needs.
+   * A wrapper that hugs the image cannot be made to respect the stage's
+   * height (percentage max-height against an auto parent is nothing), so
+   * the box fills the stage and this works out the rest.
+   */
+  let fitted = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  function measureFit() {
+    const img = imgEl;
+    const box = frameEl;
+    if (!img || !box || !img.naturalWidth || !img.naturalHeight) {
+      fitted = null;
+      return;
+    }
+    decoded = [img.naturalWidth, img.naturalHeight];
+    const W = box.clientWidth;
+    const H = box.clientHeight;
+    const scale = Math.min(W / img.naturalWidth, H / img.naturalHeight);
+    const w = img.naturalWidth * scale;
+    const h = img.naturalHeight * scale;
+    fitted = { x: (W - w) / 2, y: (H - h) / 2, w, h };
+  }
+
+  // The box changes with the window and the panels; keep the overlay on the picture.
+  $effect(() => {
+    const box = frameEl;
+    if (!box) return;
+    const ro = new ResizeObserver(() => measureFit());
+    ro.observe(box);
+    return () => ro.disconnect();
+  });
 
   function setCrop(c: { x: number; y: number; w: number; h: number }) {
     D.setRaw({ crop: c });
@@ -151,10 +187,12 @@
       {#if D.id === null}
         <div class="muted empty">Select photos in the Library; the first one opens here.</div>
       {:else if D.preview}
-        <div class="frame">
-          <img src={D.preview} alt="Developed" bind:this={imgEl} />
-          {#if cropping}
-            <CropOverlay crop={D.raw.crop} aspect={holdAspect} {zoom} onchange={setCrop} />
+        <div class="frame" bind:this={frameEl}>
+          <img src={D.preview} alt="Developed" bind:this={imgEl} onload={measureFit} />
+          {#if cropping && fitted}
+            <div class="over" style="left: {fitted.x}px; top: {fitted.y}px; width: {fitted.w}px; height: {fitted.h}px">
+              <CropOverlay crop={D.raw.crop} aspect={holdAspect} {zoom} onchange={setCrop} />
+            </div>
           {/if}
         </div>
       {:else if D.error}
@@ -165,13 +203,18 @@
       </div>
       <div class="tag zoom right">
         {#if zoom !== 1}<span>{Math.round(zoom * 100)}%</span>{/if}
+        {#if decoded}
+          <span class="mono dims" title="Decoded pixels · the file's own size">
+            {decoded[0]}×{decoded[1]}{#if D.input?.width && D.input?.height}<span class="muted"> of {D.input.width}×{D.input.height}</span>{/if}
+          </span>
+        {/if}
         <button class="full" class:on={D.full} onclick={() => D.setFull(!D.full, () => D.refresh())} title="Render every pixel ({D.native ? `${D.native} px` : 'full size'}) instead of a fitted preview — slower">
           {D.full ? "full res" : `${D.detail} px`}
         </button>
       </div>
     </div>
       {#if D.isVideo && D.input?.duration}
-        <div class="frame row">
+        <div class="picker row">
           <span class="muted small">frame</span>
           <input
             type="range"
@@ -424,6 +467,9 @@
     align-items: center;
     gap: 6px;
   }
+  .dims {
+    font-size: 10.5px;
+  }
   .full {
     background: transparent;
     border: 1px solid var(--line);
@@ -439,10 +485,17 @@
   }
   .frame {
     position: relative;
-    display: inline-block;
-    max-width: 100%;
-    max-height: 100%;
-    line-height: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .frame img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .over {
+    position: absolute;
   }
   .geo {
     border-bottom: 1px solid var(--line);
@@ -458,11 +511,11 @@
     color: var(--accent-2);
     border-color: var(--accent-2);
   }
-  .frame {
+  .picker {
     padding: 6px 10px 0;
     gap: 8px;
   }
-  .frame input[type="range"] {
+  .picker input[type="range"] {
     flex: 1;
     min-width: 0;
   }
