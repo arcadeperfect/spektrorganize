@@ -174,8 +174,16 @@ collapse to one: the copy nearest the top of the tree is imported, the rest are 
 badged "copy on this card". Photos whose bytes the catalog already holds are badged "already in
 the library" and excluded too. One button puts them all back if you disagree.
 
-Only files that share a *name and size* with something else are read, so a card of new photos is
-checked for the price of one query.
+The catalog side costs nothing to check: an import preserves a file's modification time, so a
+photo already in the library has the same name, size *and* mtime as the one on the card, and that
+settles it without reading either. Only when those agree but the moment differs, and the catalog
+recorded a hash, are bytes compared. Within the scan itself, files sharing a name and size are
+hashed — that is the folder-copied-into-itself case, and it is bounded by how many copies there
+are.
+
+What this gives up: a copy that was indexed in place (so has no stored hash) and has a different
+modification time is not spotted at scan time. The Duplicates scan in the library catches that
+case, because there it can afford to read.
 
 ## Duplicates
 

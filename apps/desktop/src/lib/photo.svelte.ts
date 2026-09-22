@@ -89,7 +89,9 @@ class DevelopStage {
   setZoom(z: number, then: () => void) {
     if (this.full) return;
     const want = detailFor(z, this.native);
-    if (want === this.detail) return;
+    // Only ever more. Dropping back on zoom-out would throw away a render you
+    // waited for, and re-fetch it the moment you zoomed in again.
+    if (want <= this.detail) return;
     if (this.zoomTimer) clearTimeout(this.zoomTimer);
     this.zoomTimer = setTimeout(() => {
       this.zoomTimer = null;

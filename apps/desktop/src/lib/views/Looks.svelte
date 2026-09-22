@@ -164,7 +164,9 @@
       </div>
     </div>
     <div class="stage" use:panzoom={{
-        key: D.id,
+        // The shape of the frame is part of the key: a quarter turn or a crop
+        // changes it, and a view still fitted to the old shape clips the new one.
+        key: `${D.id}:${D.raw.rotate}:${D.raw.straighten}:${D.raw.crop ? `${D.raw.crop.x},${D.raw.crop.y},${D.raw.crop.w},${D.raw.crop.h}` : ""}`,
         onzoom: (z) => {
           zoom = z;
           L.setZoom(z);
