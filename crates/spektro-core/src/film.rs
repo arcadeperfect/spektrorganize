@@ -364,7 +364,7 @@ mod flow_paths {
     fn every_panel_path_is_a_real_parameter() {
         let data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/spektrafilm-data");
         let params = serde_json::json!({
-            "settings": { "rgb_to_raw_method": "hanatos2025" },
+            "settings": { "rgb_to_raw_method": "hanatos2025", "use_cat16": true },
             "camera": { "film_format_mm": 56.0, "exposure_compensation_ev": 0.3, "auto_exposure": true, "color_filter": "none",
                         "diffusion_filter": { "active": true, "filter_family": "black_pro_mist", "strength": 0.5, "halo_warmth": 0.1 } },
             "enlarger": { "print_exposure": 1.1, "c_filter_neutral": 10.0, "m_filter_shift": 2.0, "y_filter_shift": -1.0,

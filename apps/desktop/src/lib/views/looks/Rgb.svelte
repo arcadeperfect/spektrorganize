@@ -7,6 +7,7 @@
     $props();
 
   const value = $derived((L.value(path) as number[] | undefined) ?? [0, 0, 0]);
+  const names = $derived(value.length === 3 ? ["R", "G", "B"] : value.length === 2 ? ["X", "Y"] : value.map((_, i) => String(i + 1)));
   const overridden = $derived(L.isOverridden(path));
 
   function setIdx(i: number, v: number) {
@@ -21,7 +22,7 @@
     <button class="dot" class:on={overridden} disabled={!overridden} onclick={() => L.reset(path)} aria-label="Reset" title={overridden ? "Changed by this look — click to use the stock value" : "Stock value"}></button>
     <span class="label">{label}</span>
   </div>
-  {#each ["R", "G", "B"] as ch, i (ch)}
+  {#each names as ch, i (ch)}
     <div class="row">
       <span class="ch muted">{ch}</span>
       <input type="range" {min} {max} {step} value={value[i]} oninput={(e) => setIdx(i, Number((e.target as HTMLInputElement).value))} />

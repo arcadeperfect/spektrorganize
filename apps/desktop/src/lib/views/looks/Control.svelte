@@ -16,7 +16,7 @@
   }: {
     label: string;
     path: string;
-    kind?: "slider" | "check" | "select";
+    kind?: "slider" | "check" | "select" | "text" | "int";
     min?: number;
     max?: number;
     step?: number;
@@ -48,6 +48,13 @@
   </div>
   {#if kind === "slider"}
     <input type="range" {min} {max} {step} value={value ?? min} oninput={onSlider} ondblclick={() => L.reset(path)} />
+  {:else if kind === "text"}
+    <input class="mono" type="text" value={value ?? ""} spellcheck="false" onchange={(e) => L.set(path, (e.target as HTMLInputElement).value)} />
+  {:else if kind === "int"}
+    <input class="num mono" type="number" step="1" value={value ?? 0} onchange={(e) => {
+      const v = Math.round(Number((e.target as HTMLInputElement).value));
+      if (Number.isFinite(v)) L.set(path, v);
+    }} />
   {:else if kind === "check"}
     <label class="row"><input type="checkbox" checked={!!value} onchange={(e) => L.set(path, (e.target as HTMLInputElement).checked)} /> <span class="muted">on</span></label>
   {:else}

@@ -10,6 +10,9 @@
   import { store } from "../state.svelte";
   import Control from "./looks/Control.svelte";
   import Rgb from "./looks/Rgb.svelte";
+  import ProGroup from "./looks/ProGroup.svelte";
+  /** Flow is the curated panel; Pro is every parameter the pipeline reads, discovered from the model. */
+  let pro = $state(false);
 
   /** Frame sizes, as the grain scale needs them (long edge in mm). */
   const FORMATS = [
@@ -278,10 +281,24 @@
         {/if}
       </details>
 
+      <div class="row modes">
+        <span class="muted small">Mode</span>
+        <button class="mini" class:on={!pro} onclick={() => (pro = false)} title="The controls that matter day to day">Flow</button>
+        <button class="mini" class:on={pro} onclick={() => (pro = true)} title="Every parameter the pipeline reads">Pro</button>
+      </div>
+
+      {#if pro}
+        {#if L.effective}
+          <ProGroup obj={L.effective} stock={L.stock} />
+        {:else}
+          <p class="muted small">Resolving the look…</p>
+        {/if}
+      {:else}
       <!-- The groups follow spektrafilm's Flow panel, so a look reads the same in both apps.
            Anything of ours that Flow does not show sits at the tail of its group. -->
       <details open>
         <summary>Film</summary>
+        <Control label="Colour adaptation (CAT16)" path="settings.use_cat16" kind="check" hint="Chromatic adaptation feeding the spectral upsampling; off restores the older CAT02" />
         <Control label="Spectral upsampling" path="settings.rgb_to_raw_method" kind="select" options={opt(L.meta.upsamplers)} />
         <Control label="Film format" path="camera.film_format_mm" kind="select" options={FORMATS} hint="Sets how big the grain is on the frame" />
         <Control label="Exposure (EV)" path="camera.exposure_compensation_ev" min={-3} max={3} step={0.05} />
@@ -364,6 +381,8 @@
         </div>
         <Control label="Gamut compression" path="io.output_gamut_compress.algorithm" kind="select" options={opt(L.meta.gamut_algorithms)} />
       </details>
+
+      {/if}
 
       <details>
         <summary>All changed parameters</summary>
@@ -576,5 +595,13 @@
     min-height: 0;
     background: #0e0d0c;
     border-radius: var(--radius);
+  }
+  .modes {
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+  .modes .on {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
   }
 </style>
