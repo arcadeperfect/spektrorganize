@@ -38,15 +38,39 @@ export function panzoom(node: HTMLElement, options: PanZoomOptions = {}) {
 
   const target = () => node.firstElementChild as HTMLElement | null;
 
+  /**
+   * Zoom is applied by resizing the child, not by `transform: scale()`. A
+   * scaled layer is resampled by the compositor — bilinear, always — and
+   * `image-rendering: pixelated` on the picture has no say in that. Laid out
+   * at the zoomed size, the picture is drawn at that size, and past 1:1 its
+   * pixels stay square. The child keeps its centre at the view's centre plus
+   * (x, y); the translation is only ever a whole number of device pixels, so
+   * moving it does not resample either.
+   */
   function apply() {
     const el = target();
-    if (el) {
-      el.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
-      el.style.transformOrigin = "center center";
+    const W = node.clientWidth;
+    const H = node.clientHeight;
+    if (el && W > 0 && H > 0) {
+      const dpr = window.devicePixelRatio || 1;
+      const snap = (v: number) => Math.round(v * dpr) / dpr;
+      el.style.position = "absolute";
+      el.style.left = "0";
+      el.style.top = "0";
+      el.style.width = `${W * zoom}px`;
+      el.style.height = `${H * zoom}px`;
+      el.style.transform = `translate(${snap((W - W * zoom) / 2 + x)}px, ${snap((H - H * zoom) / 2 + y)}px)`;
+      el.style.transformOrigin = "0 0";
       el.style.willChange = "transform";
     }
     node.style.cursor = zoom > 1 ? "grab" : "default";
     opts.onzoom?.(zoom);
+  }
+
+  /** The most the view can be zoomed before its box outgrows what a browser will lay out. */
+  function ceiling(): number {
+    const long = Math.max(node.clientWidth, node.clientHeight, 1);
+    return Math.min(MAX, 30000 / long);
   }
 
   function fit() {
@@ -58,7 +82,7 @@ export function panzoom(node: HTMLElement, options: PanZoomOptions = {}) {
 
   /** Zoom about a point in the element's box, so that point stays put. */
   function zoomAt(factor: number, clientX?: number, clientY?: number) {
-    const next = Math.min(MAX, Math.max(MIN, zoom * factor));
+    const next = Math.min(ceiling(), Math.max(MIN, zoom * factor));
     const r = node.getBoundingClientRect();
     const cx = (clientX ?? r.left + r.width / 2) - (r.left + r.width / 2);
     const cy = (clientY ?? r.top + r.height / 2) - (r.top + r.height / 2);
@@ -155,7 +179,7 @@ export function panzoom(node: HTMLElement, options: PanZoomOptions = {}) {
         break;
       case "Numpad1":
         // 1:1 — one picture pixel per screen pixel, as in Blender; fit when unknown.
-        zoom = Math.min(MAX, Math.max(MIN, opts.pixel?.() ?? 1));
+        zoom = Math.min(ceiling(), Math.max(MIN, opts.pixel?.() ?? 1));
         x = 0;
         y = 0;
         apply();

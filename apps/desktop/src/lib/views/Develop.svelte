@@ -82,12 +82,16 @@
    */
   let fitted = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  /** Screen pixels per picture pixel right now: 1 is true 1:1. */
-  const pxRatio = $derived(fitted && decoded ? (fitted.w / decoded[0]) * zoom * (window.devicePixelRatio || 1) : 0);
+  /**
+   * Screen pixels per picture pixel right now: 1 is true 1:1. The fitted
+   * rectangle is measured from the box, which is laid out at the zoomed size,
+   * so the zoom is already in it.
+   */
+  const pxRatio = $derived(fitted && decoded ? (fitted.w / decoded[0]) * (window.devicePixelRatio || 1) : 0);
 
   /** The zoom that puts one picture pixel on one screen pixel. */
   function onePixel(): number | null {
-    return fitted && decoded ? decoded[0] / (fitted.w * (window.devicePixelRatio || 1)) : null;
+    return fitted && decoded ? (decoded[0] * zoom) / (fitted.w * (window.devicePixelRatio || 1)) : null;
   }
 
   function measureFit() {
@@ -201,7 +205,7 @@
           <img src={D.preview} alt="Developed" bind:this={imgEl} onload={measureFit} class:pixelated={pxRatio > 1} />
           {#if cropping && fitted}
             <div class="over" style="left: {fitted.x}px; top: {fitted.y}px; width: {fitted.w}px; height: {fitted.h}px">
-              <CropOverlay crop={D.raw.crop} aspect={holdAspect} {zoom} onchange={setCrop} />
+              <CropOverlay crop={D.raw.crop} aspect={holdAspect} onchange={setCrop} />
             </div>
           {/if}
         </div>

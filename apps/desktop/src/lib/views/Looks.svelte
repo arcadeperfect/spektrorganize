@@ -29,9 +29,10 @@
     printNat = [i.naturalWidth, i.naturalHeight];
     printFitW = i.clientWidth;
   }
-  const printPx = $derived(printNat && printFitW ? (printFitW / printNat[0]) * zoom * (window.devicePixelRatio || 1) : 0);
+  // The picture is laid out at the zoomed size, so its width already includes the zoom.
+  const printPx = $derived(printNat && printFitW ? (printFitW / printNat[0]) * (window.devicePixelRatio || 1) : 0);
   function printOnePixel(): number | null {
-    return printNat && printFitW ? printNat[0] / (printFitW * (window.devicePixelRatio || 1)) : null;
+    return printNat && printFitW ? (printNat[0] * zoom) / (printFitW * (window.devicePixelRatio || 1)) : null;
   }
 
   const candidates = $derived.by(() => {
@@ -184,6 +185,7 @@
         onzoom: (z) => {
           zoom = z;
           L.setZoom(z);
+          measurePrint();
         },
         pixel: printOnePixel,
       }} role="img" aria-label="Preview">
