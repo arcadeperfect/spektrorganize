@@ -61,12 +61,19 @@ impl Preset {
     /// Import a preset from another spektrafilm flavour, returning it with
     /// the importer's warnings (fields it could not map exactly).
     pub fn import(path: &Path, data_dir: Option<&Path>) -> anyhow::Result<(Preset, Vec<String>)> {
+        let bytes = std::fs::read(path)?;
+        if let Some((name, inner)) = unzip_preset(&bytes)? {
+            return Preset::import_bytes(&name, &inner, data_dir);
+        }
         let imported = spektrafilm_core::importers::import_file(path, data_dir).map_err(|e| anyhow::anyhow!(e))?;
         Preset::from_imported(imported, path)
     }
 
     /// Import from raw bytes (downloaded or pasted), `name_hint` for naming.
     pub fn import_bytes(name_hint: &str, bytes: &[u8], data_dir: Option<&Path>) -> anyhow::Result<(Preset, Vec<String>)> {
+        if let Some((name, inner)) = unzip_preset(bytes)? {
+            return Preset::import_bytes(&name, &inner, data_dir);
+        }
         let imported = spektrafilm_core::importers::import_bytes(name_hint, bytes, data_dir).map_err(|e| anyhow::anyhow!(e))?;
         Preset::from_imported(imported, Path::new(name_hint))
     }
@@ -353,6 +360,28 @@ impl Renderer {
     }
 }
 
+/// Presets are shared as zips — one JSON inside, sometimes a whole bundle. When `bytes` is an
+/// archive, hand back the first preset file in it, named by its own stem. `None` when it is not
+/// an archive at all, so the ordinary importers get their turn.
+fn unzip_preset(bytes: &[u8]) -> anyhow::Result<Option<(String, Vec<u8>)>> {
+    if !bytes.starts_with(b"PK\x03\x04") {
+        return Ok(None);
+    }
+    use std::io::Read;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut names: Vec<String> = (0..archive.len()).filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string())).collect();
+    names.sort();
+    let pick = names
+        .iter()
+        .find(|n| !n.contains("__MACOSX") && !n.rsplit('/').next().unwrap_or("").starts_with('.') && n.to_ascii_lowercase().ends_with(".json"))
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("the zip holds no preset (.json) file"))?;
+    let mut inner = Vec::new();
+    archive.by_name(&pick)?.read_to_end(&mut inner)?;
+    let stem = Path::new(&pick).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "preset".into());
+    Ok(Some((stem, inner)))
+}
+
 #[cfg(test)]
 mod flow_paths {
     use super::*;
@@ -385,5 +414,29 @@ mod flow_paths {
         assert_eq!(p.enlarger.c_filter_neutral, 10.0);
         assert_eq!(p.film_render.halation.halation_strength, [0.05, 0.02, 0.0]);
         assert!(p.scanner.white_correction);
+    }
+}
+
+#[cfg(test)]
+mod import_probe {
+    use super::*;
+
+    /// Import whatever files `SPEKTRO_TEST_PRESETS` points at (a directory), and say what came of each.
+    #[test]
+    #[ignore = "needs preset files"]
+    fn imports_shared_presets() {
+        let Ok(dir) = std::env::var("SPEKTRO_TEST_PRESETS") else { return };
+        let data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/spektrafilm-data");
+        for e in std::fs::read_dir(&dir).unwrap() {
+            let p = e.unwrap().path();
+            match Preset::import(&p, Some(&data_dir)) {
+                Ok((preset, warnings)) => {
+                    let resolved = preset.resolve(&data_dir).map(|_| "resolves").unwrap_or("DOES NOT RESOLVE");
+                    println!("{}: film={} print={} params={} keys, {} — warnings: {:?}", p.file_name().unwrap().to_string_lossy(), preset.film, preset.print,
+                        preset.params.as_object().map(|o| o.len()).unwrap_or(0), resolved, warnings);
+                }
+                Err(err) => println!("{}: FAILED {err:#}", p.file_name().unwrap().to_string_lossy()),
+            }
+        }
     }
 }

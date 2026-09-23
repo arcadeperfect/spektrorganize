@@ -4292,6 +4292,7 @@ dependencies = [
  "tracing",
  "trash",
  "walkdir",
+ "zip",
 ]
 
 [[package]]

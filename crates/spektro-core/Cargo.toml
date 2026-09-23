@@ -16,6 +16,7 @@ chrono.workspace = true
 blake3.workspace = true
 rayon.workspace = true
 trash.workspace = true
+zip.workspace = true
 sequitur.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
