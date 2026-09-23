@@ -83,9 +83,9 @@
       var o: V;
       o.pos = vec4(u.rect.x + p.x * u.rect.z, u.rect.y + p.y * u.rect.w, 0., 1.);
       // Rotate the sampling about the centre: the quad is already the rotated shape.
-      let q = vec2(p.x, 1. - p.y) - vec2(0.5, 0.5);
+      let cq = vec2(p.x, 1. - p.y) - vec2(0.5, 0.5);
       let c = u.turn.x; let sn = u.turn.y;
-      o.uv = vec2(c * q.x + sn * q.y, -sn * q.x + c * q.y) + vec2(0.5, 0.5);
+      o.uv = vec2(c * cq.x + sn * cq.y, -sn * cq.x + c * cq.y) + vec2(0.5, 0.5);
       return o;
     }
     @fragment fn fs(v: V) -> @location(0) vec4<f32> { return textureSample(t, s, v.uv); }
@@ -98,6 +98,9 @@
     if (!adapter) return null;
     // Ask for the adapter's real texture ceiling: a full-resolution frame is over 8192 wide.
     const device = await adapter.requestDevice({ requiredLimits: { maxTextureDimension2D: adapter.limits.maxTextureDimension2D } });
+    // A shader or pipeline error otherwise shows as a black canvas and nothing else.
+    device.addEventListener("uncapturederror", (e) => console.error("viewport:", (e as GPUUncapturedErrorEvent).error.message));
+    device.lost.then((info) => console.error("viewport: device lost:", info.message));
     const ctx = c.getContext("webgpu") as GPUCanvasContext | null;
     if (!ctx) return null;
     const format = nav.gpu.getPreferredCanvasFormat();
