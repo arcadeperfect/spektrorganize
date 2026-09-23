@@ -122,9 +122,20 @@
   function usm(): [number, number] {
     return getPath(L.effective, "scanner.unsharp_mask") ?? [0.7, 0.7];
   }
+
+  /** ← and → walk the library's current listing; a field or slider with focus keeps them. */
+  async function stepKey(e: KeyboardEvent) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || D.id === null) return;
+    e.preventDefault();
+    const next = await lib.step(D.id, e.key === "ArrowRight" ? 1 : -1);
+    if (next) await D.setPhoto(next.id);
+  }
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={(e) => { onKey(e); stepKey(e); }} />
 
 <div class="looks">
   <!-- look list -->

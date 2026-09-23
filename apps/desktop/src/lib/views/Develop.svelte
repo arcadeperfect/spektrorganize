@@ -112,6 +112,18 @@
     if (missing.length) for (const t of await catalog.requestThumbs(missing).catch(() => [])) lib.thumbs.set(t.id, t.path);
   });
 
+
+  /** ← and → walk the library's current listing; a field or slider with focus keeps them. */
+  async function stepKey(e: KeyboardEvent) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || D.id === null) return;
+    e.preventDefault();
+    const next = await lib.step(D.id, e.key === "ArrowRight" ? 1 : -1);
+    if (next) await D.setPhoto(next.id);
+  }
+
   function exportDeveloped() {
     const ids = lib.selected.size ? [...lib.selected] : D.id !== null ? [D.id] : [];
     if (!ids.length) {
@@ -121,6 +133,8 @@
     store.startPrint({ ids, preset: DEVELOPED_ONLY, jpeg: store.config?.outputs.jpeg ?? true, exr: store.config?.outputs.exr ?? false });
   }
 </script>
+
+<svelte:window onkeydown={stepKey} />
 
 <div class="develop">
   <section class="center">

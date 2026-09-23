@@ -151,6 +151,38 @@ class Library {
     return undefined;
   }
 
+  /**
+   * The photo `delta` places along from `id` in the current listing — what
+   * ← and → mean in Develop and Print. Loads the page it lands on if needed,
+   * and moves the cursor and selection there so the rest of the app follows.
+   */
+  async step(id: number, delta: number): Promise<AssetSummary | null> {
+    let i = this.cursor !== null && this.item(this.cursor)?.id === id ? this.cursor : -1;
+    if (i < 0) {
+      for (const [n, items] of this.pages) {
+        const k = items.findIndex((a) => a.id === id);
+        if (k >= 0) {
+          i = n * PAGE + k;
+          break;
+        }
+      }
+    }
+    if (i < 0) return null;
+    const to = i + delta;
+    if (to < 0 || to >= this.total) return null;
+    // Fetch the page itself: `ensure` does not wait, and it would move the grid's own window.
+    await this.fetchPage(Math.floor(to / PAGE));
+    for (let waited = 0; !this.item(to) && waited < 40; waited++) {
+      // Another request already has the page in flight; give it a moment.
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const a = this.item(to);
+    if (!a) return null;
+    this.cursor = to;
+    this.click(to, a.id, { shiftKey: false, metaKey: false, ctrlKey: false });
+    return a;
+  }
+
   /** The clip the render dialog is open for. */
   renderClip = $state<number | null>(null);
 
