@@ -12,7 +12,7 @@
   /** Declined copies stay on screen by default, so you can see what was skipped. */
   let showCopies = $state(true);
   /** Numbered runs shown as one row each, rather than a few hundred. */
-  let collapse = $state(true);
+  let collapse = $state(false);
   const sequences = $derived(store.scan?.sequences ?? []);
   /** Group ids that belong to a run, mapped to the run they are in. */
   const inSequence = $derived.by(() => {
@@ -121,7 +121,7 @@
           {sequences.reduce((n, s) => n + s.frames, 0)} frames
           {#if collapse}— shown as one row each; every frame is still imported{/if}
         </span>
-        <button class="mini" onclick={() => (collapse = !collapse)}>{collapse ? "show every frame" : "collapse them"}</button>
+        <button class="mini" onclick={() => (collapse = !collapse)}>{collapse ? "show every frame" : "collapse to one row each"}</button>
       </div>
     </div>
   {/if}
