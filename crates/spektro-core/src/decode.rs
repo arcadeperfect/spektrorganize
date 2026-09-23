@@ -240,11 +240,22 @@ impl RawFile {
         CaptureMeta { captured_at, make, model, camera, iso, lens, orientation, source: MetaSource::Raw }
     }
 
+    /// The picture's size — the frame the file declares when that is smaller than the one
+    /// LibRaw would decode, which is the case for bodies its camera table does not know.
+    /// (`develop` crops to the same rectangle, so these are the pixels that come out.)
     pub fn width(&self) -> u32 {
-        self.data().sizes.width as u32
+        self.frame().0
     }
     pub fn height(&self) -> u32 {
-        self.data().sizes.height as u32
+        self.frame().1
+    }
+
+    fn frame(&self) -> (u32, u32) {
+        let s = &self.data().sizes;
+        let (w, h) = (s.width as u32, s.height as u32);
+        let c = s.raw_inset_crops[0];
+        let (cw, ch) = (c.cwidth as u32, c.cheight as u32);
+        if cw > 0 && ch > 0 && (cw < w || ch < h) && cw <= w && ch <= h { (cw, ch) } else { (w, h) }
     }
 
     /// Largest embedded JPEG preview, as raw JPEG bytes.
@@ -454,4 +465,41 @@ pub fn read_meta(path: &Path) -> Result<CaptureMeta, String> {
 
 pub fn libraw_version() -> String {
     unsafe { CStr::from_ptr(sys::libraw_version()).to_string_lossy().into_owned() }
+}
+
+#[cfg(test)]
+mod frame_probe {
+    use super::*;
+
+    /// What LibRaw makes of one file: its frame, its margins, the crop the file declares, and
+    /// whether the decoded picture has a black border on the right or bottom.
+    /// `SPEKTRO_TEST_RAW=/path/x.ARW cargo test -p spektro-core frame_probe -- --ignored --nocapture`
+    #[test]
+    #[ignore = "needs a RAW file"]
+    fn frame_of_a_real_file() {
+        let Ok(path) = std::env::var("SPEKTRO_TEST_RAW") else { return };
+        let mut f = RawFile::open(Path::new(&path)).expect("open");
+        {
+            let s = &f.data().sizes;
+            let c = s.raw_inset_crops[0];
+            println!("raw {}x{}  frame {}x{}  margins l{} t{}  inset l{} t{} {}x{}  flip {}",
+                s.raw_width, s.raw_height, s.width, s.height, s.left_margin, s.top_margin,
+                c.cleft, c.ctop, c.cwidth, c.cheight, s.flip);
+        }
+        for half in [true, false] {
+            // A handle is recycled after a develop; open again for each pass.
+            let mut f = RawFile::open(Path::new(&path)).expect("open");
+            let mut st = DevelopSettings::default();
+            st.half_size = half;
+            let img = f.develop(&st).expect("develop");
+            let (w, h) = (img.width as usize, img.height as usize);
+            let col_black = |x: usize| (0..h).all(|y| img.data[(y * w + x) * 3..(y * w + x) * 3 + 3].iter().all(|v| *v < 0.002));
+            let row_black = |y: usize| (0..w).all(|x| img.data[(y * w + x) * 3..(y * w + x) * 3 + 3].iter().all(|v| *v < 0.002));
+            let right = (0..w).rev().take_while(|x| col_black(*x)).count();
+            let bottom = (0..h).rev().take_while(|y| row_black(*y)).count();
+            let left = (0..w).take_while(|x| col_black(*x)).count();
+            let top = (0..h).take_while(|y| row_black(*y)).count();
+            println!("half={half}: decoded {w}x{h}  black columns: left {left} right {right}  black rows: top {top} bottom {bottom}");
+        }
+    }
 }

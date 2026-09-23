@@ -331,14 +331,17 @@ impl Catalog {
     }
 
     /// Re-check which roots are reachable (a disconnected drive goes offline, not missing).
-    pub fn refresh_online(&self) -> anyhow::Result<()> {
+    /// Returns whether anything changed, so a caller polling this knows when to tell the UI.
+    pub fn refresh_online(&self) -> anyhow::Result<bool> {
+        let mut changed = false;
         for r in self.roots()? {
             let online = r.path.is_dir();
             if online != r.online {
                 self.conn.execute("UPDATE roots SET online = ?2 WHERE id = ?1", params![r.id, online as i64])?;
+                changed = true;
             }
         }
-        Ok(())
+        Ok(changed)
     }
 
     /// Point a root at its new location (the whole tree moved, e.g. to another drive). Checks a

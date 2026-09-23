@@ -92,6 +92,18 @@ The window sets `dragDropEnabled: false` in `tauri.conf.json`. Tauri's OS-level 
 handler otherwise swallows the webview's own drag events, which breaks the token chips in the
 Layout templates. The app does not accept dropped files from Finder, so nothing is lost.
 
+## Sony bodies LibRaw does not know
+
+LibRaw 0.21 has no entry for the A7C II and its generation, so it decodes the whole raw frame
+with the sensor's masked border still on — 7168×5120 for a 7008×4672 picture, the extra as a
+black band down the right and along the bottom. The file records where the picture is
+(`raw_inset_crops`); the decode crops to that when it is smaller than LibRaw's frame, and the
+catalog records that size. Colour still borrows the nearest known body's matrix; only a newer
+LibRaw fixes that.
+
+Drives are re-checked every few seconds, so a root that was offline comes back as soon as the
+volume mounts.
+
 ## Rating, select and reject
 
 In the grid or the full-screen view: `1`–`5` give that many hearts, `0` clears, `S` marks a

@@ -74,6 +74,8 @@ pub fn allow_render_roots(app: &AppHandle) {
 }
 
 /// Startup work that must not delay the window: online check, render scopes, thumbnails.
+/// The online check then keeps going, so a drive plugged in later is noticed without a
+/// relaunch — a stat of each root's path every few seconds, which costs nothing.
 pub fn warm_up(app: AppHandle) {
     std::thread::spawn(move || {
         let st = app.state::<CatalogState>();
@@ -82,6 +84,24 @@ pub fn warm_up(app: AppHandle) {
         }
         allow_render_roots(&app);
         st.queue_missing_thumbs();
+
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(4));
+            let changed = match st.db.lock().unwrap().refresh_online() {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("refresh roots: {e}");
+                    false
+                }
+            };
+            if changed {
+                // A root came or went: the render scopes may have grown, photos on it can
+                // have thumbnails now, and the sidebar's offline badges are stale.
+                allow_render_roots(&app);
+                st.queue_missing_thumbs();
+                let _ = app.emit("catalog-changed", ());
+            }
+        }
     });
 }
 
