@@ -114,6 +114,32 @@ struct DecodeKey {
     max_px: u32,
 }
 
+/// A rendered picture as the viewport wants it: sRGB-encoded 8-bit RGBA, row-major, no padding.
+#[derive(Debug, Clone)]
+pub struct Frame {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+impl Frame {
+    /// From a pipeline output that is already sRGB-encoded.
+    pub fn from_encoded(img: &ImageBuf) -> Frame {
+        let mut rgba = Vec::with_capacity(img.data.len() / 3 * 4);
+        for px in img.data.chunks_exact(3) {
+            for v in px {
+                rgba.push((spektrafilm_math::precision::to_f32(*v).clamp(0.0, 1.0) * 255.0).round() as u8);
+            }
+            rgba.push(255);
+        }
+        Frame { width: img.width, height: img.height, rgba }
+    }
+
+    pub fn bytes(&self) -> usize {
+        self.rgba.len()
+    }
+}
+
 /// Preview renderer with small decode and pipeline caches. Not `Sync`; keep
 /// one behind a mutex.
 pub struct PreviewEngine {
@@ -236,6 +262,77 @@ impl PreviewEngine {
         let buf = ImageBuf::from_data(img.width, img.height, img.data.iter().map(|v| from_f32(*v)).collect());
         let out = pipeline.process(buf, self.backend.as_ref());
         crate::export::encode_jpeg(&out, 88)
+    }
+
+    /// The look on the photo, as pixels for the viewport: sRGB-encoded 8-bit RGBA, no JPEG
+    /// in between. This is what Develop and Print draw.
+    pub fn frame(
+        &mut self,
+        raw_path: &Path,
+        raw: &RawSettings,
+        preset: &Preset,
+        data_dir: &Path,
+        max_px: u32,
+        at: Option<f64>,
+    ) -> anyhow::Result<Frame> {
+        let mut img = self.decode(raw_path, raw, max_px, at)?;
+        apply_raw_adjustments(&mut img, raw);
+        let img = crate::geometry::apply(img, raw);
+        let pipeline = self.pipeline(preset, data_dir, img.color_space)?;
+        let buf = ImageBuf::from_data(img.width, img.height, img.data.iter().map(|v| from_f32(*v)).collect());
+        let out = pipeline.process(buf, self.backend.as_ref());
+        Ok(Frame::from_encoded(&out))
+    }
+
+    /// The developed photo as viewport pixels (see [`Self::frame`]).
+    pub fn frame_developed(&mut self, raw_path: &Path, raw: &RawSettings, max_px: u32, at: Option<f64>) -> anyhow::Result<Frame> {
+        let mut img = self.decode(raw_path, raw, max_px, at)?;
+        apply_raw_adjustments(&mut img, raw);
+        self.to_srgb_frame(crate::geometry::apply(img, raw))
+    }
+
+    /// The print stage's "before" as viewport pixels (see [`Self::render_before`]).
+    pub fn frame_before(
+        &mut self,
+        raw_path: &Path,
+        raw: &RawSettings,
+        preset: &Preset,
+        data_dir: &Path,
+        max_px: u32,
+        at: Option<f64>,
+    ) -> anyhow::Result<Frame> {
+        let mut img = self.decode(raw_path, raw, max_px, at)?;
+        apply_raw_adjustments(&mut img, raw);
+        let mut img = crate::geometry::apply(img, raw);
+        let pipeline = self.pipeline(preset, data_dir, img.color_space)?;
+        let buf = ImageBuf::from_data(img.width, img.height, img.data.iter().map(|v| from_f32(*v)).collect());
+        let ev = pipeline.autoexposure_ev(&buf) + pipeline.params.camera.exposure_compensation_ev as f64;
+        let gain = 2f32.powf(ev as f32);
+        img.data.iter_mut().for_each(|v| *v *= gain);
+        self.to_srgb_frame(img)
+    }
+
+    /// Linear, in its own primaries -> sRGB-encoded 8-bit RGBA.
+    fn to_srgb_frame(&self, img: LinearImage) -> anyhow::Result<Frame> {
+        let src = spektrafilm_math::colourspaces::lookup(img.color_space).map_err(|e| anyhow::anyhow!(e))?;
+        let dst = spektrafilm_math::colourspaces::lookup("sRGB").map_err(|e| anyhow::anyhow!(e))?;
+        let mut m = [[0.0f32; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                m[i][j] = (0..3).map(|k| dst.xyz_to_rgb[i][k] * src.rgb_to_xyz[k][j]).sum::<f64>() as f32;
+            }
+        }
+        // The transfer curve through a table: one pow per code value, not per pixel.
+        let lut: Vec<u8> = (0..4096).map(|i| (dst.cctf.encode(i as f64 / 4095.0) * 255.0).round() as u8).collect();
+        let mut rgba = Vec::with_capacity(img.data.len() / 3 * 4);
+        for px in img.data.chunks_exact(3) {
+            for row in &m {
+                let v = (row[0] * px[0] + row[1] * px[1] + row[2] * px[2]).clamp(0.0, 1.0);
+                rgba.push(lut[(v * 4095.0) as usize]);
+            }
+            rgba.push(255);
+        }
+        Ok(Frame { width: img.width, height: img.height, rgba })
     }
 
     /// The developed photo: decode plus its develop settings, colour-managed

@@ -20,6 +20,9 @@ export interface PanZoomOptions {
   /** The zoom at which one picture pixel is one screen pixel, when the view
    * knows its picture's size. Without it, 1:1 falls back to "fit". */
   pixel?: () => number | null;
+  /** Take the view state and draw it yourself (a GPU viewport), instead of
+   * having the first child laid out at the zoomed size. */
+  apply?: (zoom: number, x: number, y: number) => void;
 }
 
 const MIN = 0.05;
@@ -48,6 +51,12 @@ export function panzoom(node: HTMLElement, options: PanZoomOptions = {}) {
    * moving it does not resample either.
    */
   function apply() {
+    if (opts.apply) {
+      opts.apply(zoom, x, y);
+      node.style.cursor = zoom > 1 ? "grab" : "default";
+      opts.onzoom?.(zoom);
+      return;
+    }
     const el = target();
     const W = node.clientWidth;
     const H = node.clientHeight;

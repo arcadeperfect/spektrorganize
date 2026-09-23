@@ -15,6 +15,38 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Default)]
 pub struct LookState {
     engine: Mutex<Option<PreviewEngine>>,
+    /// Rendered frames waiting to be fetched over `frame://`, newest last. A handful is
+    /// kept so a "before/after" toggle does not re-render; older ones are dropped.
+    frames: Mutex<Vec<(u64, std::sync::Arc<look::Frame>)>>,
+    next_token: std::sync::atomic::AtomicU64,
+}
+
+/// Where the viewport finds a rendered frame.
+#[derive(Serialize)]
+pub struct FrameRef {
+    pub token: u64,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl LookState {
+    fn keep(&self, frame: look::Frame) -> FrameRef {
+        let token = self.next_token.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let r = FrameRef { token, width: frame.width, height: frame.height };
+        let mut frames = self.frames.lock().unwrap();
+        frames.push((token, std::sync::Arc::new(frame)));
+        // Bound the memory: a few full-resolution frames is already a few hundred megabytes.
+        let mut bytes: usize = frames.iter().map(|(_, f)| f.bytes()).sum();
+        while frames.len() > 1 && (frames.len() > 4 || bytes > 600 * 1024 * 1024) {
+            let (_, gone) = frames.remove(0);
+            bytes -= gone.bytes();
+        }
+        r
+    }
+
+    pub fn take(&self, token: u64) -> Option<std::sync::Arc<look::Frame>> {
+        self.frames.lock().unwrap().iter().find(|(t, _)| *t == token).map(|(_, f)| f.clone())
+    }
 }
 
 fn data_dir(state: &AppState) -> Result<PathBuf> {
@@ -182,6 +214,69 @@ pub async fn develop_preview(app: AppHandle, id: i64, raw: RawSettings, max_px: 
         let jpg = engine.render_developed(&raw_path, &raw, max_px.clamp(256, 16384), at).map_err(|e| format!("{e:#}"))?;
         use base64::Engine;
         Ok(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(jpg)))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The look on a photo as raw pixels for the viewport; fetch them at `frame://localhost/<token>`.
+#[tauri::command]
+pub async fn look_frame(app: AppHandle, id: i64, preset: Preset, raw: RawSettings, max_px: u32, at: Option<f64>) -> Result<FrameRef> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let raw_path = {
+            let st = app.state::<CatalogState>();
+            let db = st.db.lock().unwrap();
+            spektro_core::catalog::print::raw_path(&db, id).map_err(err)??
+        };
+        let dir = data_dir(&app.state::<AppState>())?;
+        let looks = app.state::<LookState>();
+        let frame = {
+            let mut engine = looks.engine.lock().unwrap();
+            let engine = engine.get_or_insert_with(PreviewEngine::default);
+            engine.frame(&raw_path, &raw, &preset, &dir, max_px.clamp(256, 16384), at).map_err(|e| format!("{e:#}"))?
+        };
+        Ok(looks.keep(frame))
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+pub async fn develop_frame(app: AppHandle, id: i64, raw: RawSettings, max_px: u32, at: Option<f64>) -> Result<FrameRef> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let raw_path = {
+            let st = app.state::<CatalogState>();
+            let db = st.db.lock().unwrap();
+            spektro_core::catalog::print::raw_path(&db, id).map_err(err)??
+        };
+        let looks = app.state::<LookState>();
+        let frame = {
+            let mut engine = looks.engine.lock().unwrap();
+            let engine = engine.get_or_insert_with(PreviewEngine::default);
+            engine.frame_developed(&raw_path, &raw, max_px.clamp(256, 16384), at).map_err(|e| format!("{e:#}"))?
+        };
+        Ok(looks.keep(frame))
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+pub async fn look_frame_before(app: AppHandle, id: i64, preset: Preset, raw: RawSettings, max_px: u32, at: Option<f64>) -> Result<FrameRef> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let raw_path = {
+            let st = app.state::<CatalogState>();
+            let db = st.db.lock().unwrap();
+            spektro_core::catalog::print::raw_path(&db, id).map_err(err)??
+        };
+        let dir = data_dir(&app.state::<AppState>())?;
+        let looks = app.state::<LookState>();
+        let frame = {
+            let mut engine = looks.engine.lock().unwrap();
+            let engine = engine.get_or_insert_with(PreviewEngine::default);
+            engine.frame_before(&raw_path, &raw, &preset, &dir, max_px.clamp(256, 16384), at).map_err(|e| format!("{e:#}"))?
+        };
+        Ok(looks.keep(frame))
     })
     .await
     .map_err(err)?

@@ -2,7 +2,7 @@
 // the parameters it resolves to, the preview photo with its RAW settings, and
 // a coalescing preview loop (one render in flight; the latest edit wins).
 
-import { api, looks as backend, type Look, type LookMeta, type PresetSummary } from "./api";
+import { api, looks as backend, type Look, type LookMeta, type PresetSummary, type FrameRef } from "./api";
 import { develop } from "./photo.svelte";
 
 export const ROUTE_PRINT = "input > film > print > scan";
@@ -62,10 +62,10 @@ class Looks {
   effective = $state<Record<string, any> | null>(null);
   stock = $state<Record<string, any> | null>(null);
 
-  preview = $state<string | null>(null);
+  preview = $state<FrameRef | null>(null);
   /** Before/after: the photo with only its RAW settings, no film stage. */
   showBefore = $state(false);
-  before = $state<string | null>(null);
+  before = $state<FrameRef | null>(null);
   rendering = $state(false);
   renderMs = $state(0);
   error = $state<string | null>(null);
@@ -273,8 +273,8 @@ class Looks {
         const t = performance.now();
         const px = develop.detail;
         const at = develop.frameAt;
-        if (this.showBefore && !this.before) this.before = await backend.previewBefore(develop.id, look, raw, px, at);
-        this.preview = await backend.preview(develop.id, look, raw, px, at);
+        if (this.showBefore && !this.before) this.before = await backend.frameBefore(develop.id, look, raw, px, at);
+        this.preview = await backend.frame(develop.id, look, raw, px, at);
         this.renderMs = Math.round(performance.now() - t);
       }
     } catch (e) {

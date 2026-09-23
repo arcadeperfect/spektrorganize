@@ -541,6 +541,23 @@ pub fn run() {
         // Clips are wherever the user keeps them, which the webview cannot read. This serves
         // them by catalog file id, with byte ranges so the player can seek, and it will only
         // ever open a path the catalog already knows about.
+        // Rendered frames go to the viewport as bytes: width × height × RGBA, no JPEG, no
+        // base64. The viewport uploads them straight into a texture.
+        .register_uri_scheme_protocol("frame", |ctx, request| {
+            use tauri::http::{Response, StatusCode, header};
+            let fail = |code: StatusCode| Response::builder().status(code).body(Vec::new()).unwrap();
+            let Ok(token) = request.uri().path().trim_matches('/').parse::<u64>() else { return fail(StatusCode::BAD_REQUEST) };
+            let Some(frame) = ctx.app_handle().state::<looks::LookState>().take(token) else { return fail(StatusCode::NOT_FOUND) };
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/octet-stream")
+                .header("X-Width", frame.width.to_string())
+                .header("X-Height", frame.height.to_string())
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Access-Control-Expose-Headers", "X-Width, X-Height")
+                .body(frame.rgba.clone())
+                .unwrap()
+        })
         .register_asynchronous_uri_scheme_protocol("clip", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let uri = request.uri().clone();
@@ -650,6 +667,9 @@ pub fn run() {
             looks::asset_input,
             looks::asset_raw_get,
             looks::asset_raw_set,
+            looks::look_frame,
+            looks::develop_frame,
+            looks::look_frame_before,
             looks::video_render,
             looks::look_export_cube,
         ])

@@ -114,6 +114,18 @@ presets moved to the numpad (`Numpad 0` fit, `Numpad 1` 1:1) so the digits are f
 Ratings, flags and keywords live in the catalog database only — nothing is written to your photo
 files, and no XMP sidecars are produced yet.
 
+## The viewport
+
+Develop and Print draw the picture on a WebGPU canvas (WebGL2 when that is missing), not with an
+`<img>`. A rendered frame comes from the app as raw RGBA bytes over `frame://` and goes straight
+into a texture: no JPEG, no base64, no compositor. Zoom and pan are two numbers the shader reads.
+Past one texel per device pixel the sampler is nearest, so pixels are square; below it, linear
+over mipmaps, so a full-resolution frame fitted to the window does not shimmer. Numpad 1 is one
+picture pixel per screen pixel; the badge reads in the same terms.
+
+The rest of the app stays HTML, which is what it is good at. The picture is the one thing the
+DOM was never the right surface for.
+
 ## Crop, rotate, straighten
 
 Part of develop, stored with the photo (`RawSettings`) and applied to the decoded linear image

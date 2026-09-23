@@ -10,7 +10,7 @@
   import { store } from "../state.svelte";
   import Control from "./looks/Control.svelte";
   import JobPanel from "./JobPanel.svelte";
-  import { panzoom } from "../panzoom";
+  import Viewport from "./Viewport.svelte";
 
   let importing = $state(false);
   let url = $state("");
@@ -19,21 +19,8 @@
   let paramsError = $state<string | null>(null);
 
   let zoom = $state(1);
-  let printImg = $state<HTMLImageElement | undefined>();
-  /** The picture's pixel size and its fitted width, for 1:1 and for showing pixels past it. */
-  let printNat = $state<[number, number] | null>(null);
-  let printFitW = $state(0);
-  function measurePrint() {
-    const i = printImg;
-    if (!i || !i.naturalWidth) return;
-    printNat = [i.naturalWidth, i.naturalHeight];
-    printFitW = i.clientWidth;
-  }
-  // The picture is laid out at the zoomed size, so its width already includes the zoom.
-  const printPx = $derived(printNat && printFitW ? (printFitW / printNat[0]) * (window.devicePixelRatio || 1) : 0);
-  function printOnePixel(): number | null {
-    return printNat && printFitW ? (printNat[0] * zoom) / (printFitW * (window.devicePixelRatio || 1)) : null;
-  }
+  /** Screen pixels per picture pixel right now: 1 is true 1:1. */
+  let printPx = $state(0);
 
   const candidates = $derived.by(() => {
     const ids = lib.selected.size ? [...lib.selected] : lib.focus !== null ? [lib.focus] : [];
@@ -178,34 +165,32 @@
         </button>
       </div>
     </div>
-    <div class="stage" use:panzoom={{
-        // The shape of the frame is part of the key: a quarter turn or a crop
-        // changes it, and a view still fitted to the old shape clips the new one.
-        key: `${D.id}:${D.raw.rotate}:${D.raw.straighten}:${D.raw.crop ? `${D.raw.crop.x},${D.raw.crop.y},${D.raw.crop.w},${D.raw.crop.h}` : ""}`,
-        onzoom: (z) => {
-          zoom = z;
-          L.setZoom(z);
-          measurePrint();
-        },
-        pixel: printOnePixel,
-      }} role="img" aria-label="Preview">
-      <div class="view">
+    <div class="stage">
       {#if D.id === null}
         <div class="muted empty">Select photos in the Library; the first one previews here.</div>
-      {:else if L.showBefore && L.before}
-        <img src={L.before} alt="Before" />
-        <div class="tag">Before</div>
-      {:else if L.preview}
-        <img src={L.preview} alt="Preview" bind:this={printImg} onload={measurePrint} class:pixelated={printPx > 1} />
-        {#if L.showBefore}<div class="tag">After (loading before…)</div>{/if}
+      {:else if L.preview || L.before || L.rendering}
+        <Viewport
+          frame={L.showBefore && L.before ? L.before : L.preview}
+          key={`${D.id}:${D.raw.rotate}:${D.raw.straighten}:${D.raw.crop ? `${D.raw.crop.x},${D.raw.crop.y},${D.raw.crop.w},${D.raw.crop.h}` : ""}`}
+          onzoom={(z, px) => {
+            zoom = z;
+            printPx = px;
+            L.setZoom(z);
+          }}
+        />
+        {#if L.showBefore && L.before}
+          <div class="tag">Before</div>
+        {:else if L.showBefore}
+          <div class="tag">After (loading before…)</div>
+        {/if}
         {#if L.error}<div class="bad err">{L.error}</div>{/if}
+        {#if !L.preview && !L.before}<div class="muted empty">Decoding…</div>{/if}
       {:else if L.error}
         <div class="bad empty">Can't preview this {D.isVideo ? "clip" : "photo"}: {L.error}</div>
       {:else}
         <div class="muted empty">Decoding…</div>
       {/if}
       {#if L.busy}<div class="muted busy">{L.busy}</div>{/if}
-      </div>
       <div class="tag zoom right">
         {#if zoom !== 1}<span title="Of the picture's own pixels; 100% is one per screen pixel">{Math.round((printPx || zoom) * 100)}%</span>{/if}
         <button class="full" class:on={D.full} onclick={() => L.setFull(!D.full)} title="Render every pixel ({D.native ? `${D.native} px` : 'full size'}) instead of a fitted preview — slower">
@@ -416,18 +401,6 @@
     left: auto;
     right: 10px;
   }
-  .view {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .stage img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
   .err,
   .busy {
     position: absolute;
@@ -543,8 +516,5 @@
   .picker input[type="range"] {
     flex: 1;
     min-width: 0;
-  }
-  .stage img.pixelated {
-    image-rendering: pixelated;
   }
 </style>

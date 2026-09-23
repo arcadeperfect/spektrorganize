@@ -586,6 +586,13 @@ export interface InputInfo {
   duration: number | null;
 }
 
+/** A rendered frame waiting in the app: fetch its pixels at `frameUrl(token)`. */
+export interface FrameRef {
+  token: number;
+  width: number;
+  height: number;
+}
+
 /** Preset reference meaning "develop only, no film look". */
 export const DEVELOPED_ONLY = "__developed__";
 
@@ -613,6 +620,14 @@ export const looks = {
     preset: Look | null,
   ) => invoke<{ frames: number; seconds: number; width: number; height: number; silent: boolean }>("video_render", { asset, req, preset }),
   exportCube: (preset: Look, path: string, size: number) => invoke<string>("look_export_cube", { preset, path, size }),
+  /** Raw RGBA pixels of a rendered frame, for the GPU viewport. */
+  frameUrl: (token: number) => `frame://localhost/${token}`,
+  frame: (id: number, preset: Look, raw: RawSettings, maxPx: number, at?: number | null) =>
+    invoke<FrameRef>("look_frame", { id, preset, raw, maxPx, at: at ?? null }),
+  developFrame: (id: number, raw: RawSettings, maxPx: number, at?: number | null) =>
+    invoke<FrameRef>("develop_frame", { id, raw, maxPx, at: at ?? null }),
+  frameBefore: (id: number, preset: Look, raw: RawSettings, maxPx: number, at?: number | null) =>
+    invoke<FrameRef>("look_frame_before", { id, preset, raw, maxPx, at: at ?? null }),
   rawGet: (id: number) => invoke<RawSettings>("asset_raw_get", { id }),
   rawSet: (ids: number[], raw: RawSettings) => invoke<void>("asset_raw_set", { ids, raw }),
 };

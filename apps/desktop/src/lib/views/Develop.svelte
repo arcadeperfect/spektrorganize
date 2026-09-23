@@ -8,8 +8,8 @@
   import { library as lib } from "../library.svelte";
   import { store } from "../state.svelte";
   import JobPanel from "./JobPanel.svelte";
-  import { panzoom } from "../panzoom";
   import CropOverlay from "./CropOverlay.svelte";
+  import Viewport from "./Viewport.svelte";
 
   let zoom = $state(1);
   /** Crop mode: the overlay only appears while you are cropping. */
@@ -40,10 +40,8 @@
    * is a rectangle 2/3 as wide as it is tall in those fractions.
    */
   const frameAspect = $derived.by(() => {
-    const el = imgEl;
-    const w = el?.naturalWidth ?? 0;
-    const h = el?.naturalHeight ?? 0;
-    return w && h ? w / h : 1.5;
+    const f = D.preview;
+    return f && f.width && f.height ? f.width / f.height : 1.5;
   });
   /** Lock holds whatever shape the rectangle is now, whatever the preset says. */
   let locked = $state(false);
@@ -69,55 +67,12 @@
     lockedAspect = c && c.h > 0 ? c.w / c.h : 1;
   }
 
-  let imgEl = $state<HTMLImageElement | undefined>();
-  let frameEl = $state<HTMLDivElement | undefined>();
-  /** The decoded picture's own pixel size, for the readout and for spotting a decode that lost edges. */
-  let decoded = $state<[number, number] | null>(null);
-  /**
-   * Where the picture actually sits inside its box once `object-fit: contain`
-   * has letterboxed it — in layout pixels, which is what the overlay needs.
-   * A wrapper that hugs the image cannot be made to respect the stage's
-   * height (percentage max-height against an auto parent is nothing), so
-   * the box fills the stage and this works out the rest.
-   */
+  /** Where the viewport put the picture, in CSS pixels of the stage — the crop overlay goes there. */
   let fitted = $state<{ x: number; y: number; w: number; h: number } | null>(null);
-
-  /**
-   * Screen pixels per picture pixel right now: 1 is true 1:1. The fitted
-   * rectangle is measured from the box, which is laid out at the zoomed size,
-   * so the zoom is already in it.
-   */
-  const pxRatio = $derived(fitted && decoded ? (fitted.w / decoded[0]) * (window.devicePixelRatio || 1) : 0);
-
-  /** The zoom that puts one picture pixel on one screen pixel. */
-  function onePixel(): number | null {
-    return fitted && decoded ? (decoded[0] * zoom) / (fitted.w * (window.devicePixelRatio || 1)) : null;
-  }
-
-  function measureFit() {
-    const img = imgEl;
-    const box = frameEl;
-    if (!img || !box || !img.naturalWidth || !img.naturalHeight) {
-      fitted = null;
-      return;
-    }
-    decoded = [img.naturalWidth, img.naturalHeight];
-    const W = box.clientWidth;
-    const H = box.clientHeight;
-    const scale = Math.min(W / img.naturalWidth, H / img.naturalHeight);
-    const w = img.naturalWidth * scale;
-    const h = img.naturalHeight * scale;
-    fitted = { x: (W - w) / 2, y: (H - h) / 2, w, h };
-  }
-
-  // The box changes with the window and the panels; keep the overlay on the picture.
-  $effect(() => {
-    const box = frameEl;
-    if (!box) return;
-    const ro = new ResizeObserver(() => measureFit());
-    ro.observe(box);
-    return () => ro.disconnect();
-  });
+  /** Screen pixels per picture pixel right now: 1 is true 1:1. */
+  let pxRatio = $state(0);
+  /** The decoded picture's own pixel size, for the readout and for spotting a decode that lost edges. */
+  const decoded = $derived(D.preview ? [D.preview.width, D.preview.height] : null);
 
   function setCrop(c: { x: number; y: number; w: number; h: number }) {
     D.setRaw({ crop: c });
@@ -186,35 +141,33 @@
         </button>
       </div>
     </div>
-    <div class="stage" use:panzoom={{
-        // The shape of the frame is part of the key: a quarter turn or a crop
-        // changes it, and a view still fitted to the old shape clips the new one.
-        key: `${D.id}:${D.raw.rotate}:${D.raw.straighten}:${D.raw.crop ? `${D.raw.crop.x},${D.raw.crop.y},${D.raw.crop.w},${D.raw.crop.h}` : ""}`,
-        onzoom: (z) => {
-          zoom = z;
-          D.setZoom(z, () => D.refresh());
-        },
-        pixel: onePixel,
-      }} role="img" aria-label="Preview">
-      <div class="view">
+    <div class="stage">
       {#if D.id === null}
         <div class="muted empty">Select photos in the Library; the first one opens here.</div>
-      {:else if D.preview}
-        <div class="frame" bind:this={frameEl}>
-          <!-- Past 1:1 the picture's pixels are shown as they are, not blended into each other. -->
-          <img src={D.preview} alt="Developed" bind:this={imgEl} onload={measureFit} class:pixelated={pxRatio > 1} />
-          {#if cropping && fitted}
-            <div class="over" style="left: {fitted.x}px; top: {fitted.y}px; width: {fitted.w}px; height: {fitted.h}px">
-              <CropOverlay crop={D.raw.crop} aspect={holdAspect} onchange={setCrop} />
-            </div>
-          {/if}
-        </div>
+      {:else if D.preview || D.rendering}
+        <!-- The shape of the frame is part of the key: a quarter turn or a crop
+             changes it, and a view still fitted to the old shape clips the new one. -->
+        <Viewport
+          frame={D.preview}
+          key={`${D.id}:${D.raw.rotate}:${D.raw.straighten}:${D.raw.crop ? `${D.raw.crop.x},${D.raw.crop.y},${D.raw.crop.w},${D.raw.crop.h}` : ""}`}
+          onzoom={(z, px) => {
+            zoom = z;
+            pxRatio = px;
+            D.setZoom(z, () => D.refresh());
+          }}
+          onlayout={(r) => (fitted = r)}
+        />
+        {#if cropping && fitted}
+          <div class="over" style="left: {fitted.x}px; top: {fitted.y}px; width: {fitted.w}px; height: {fitted.h}px">
+            <CropOverlay crop={D.raw.crop} aspect={holdAspect} onchange={setCrop} />
+          </div>
+        {/if}
+        {#if !D.preview}<div class="muted empty">Decoding…</div>{/if}
       {:else if D.error}
         <div class="bad empty">Can't develop this photo: {D.error}</div>
       {:else}
         <div class="muted empty">Decoding…</div>
       {/if}
-      </div>
       <div class="tag zoom right">
         {#if zoom !== 1}<span title="Of the picture's own pixels; 100% is one per screen pixel">{Math.round((pxRatio || zoom) * 100)}%</span>{/if}
         {#if decoded}
@@ -432,18 +385,6 @@
     left: auto;
     right: 10px;
   }
-  .view {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .stage img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
   .strip {
     display: flex;
     gap: 6px;
@@ -497,22 +438,9 @@
     color: var(--accent-2);
     border-color: var(--accent-2);
   }
-  .frame {
-    position: relative;
-    width: 100%;
-    height: 100%;
-  }
-  .frame img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-  .frame img.pixelated {
-    image-rendering: pixelated;
-  }
   .over {
     position: absolute;
+    z-index: 2;
   }
   .geo {
     border-bottom: 1px solid var(--line);

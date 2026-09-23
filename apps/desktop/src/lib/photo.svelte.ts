@@ -2,7 +2,7 @@
 // the catalog round-trip. The print stage (looks.svelte.ts) renders on top of
 // this, so both stages read the same settings.
 
-import { looks as backend, defaultRaw, type InputInfo, type RawSettings } from "./api";
+import { looks as backend, defaultRaw, type FrameRef, type InputInfo, type RawSettings } from "./api";
 
 /** Preview size when the photo is fitted to the stage. */
 export const BASE_PX = 1600;
@@ -23,7 +23,8 @@ class DevelopStage {
   /** Whether this photo is a RAW to decode or an image with nothing to decode. */
   input = $state<InputInfo | null>(null);
   raw = $state<RawSettings>(defaultRaw());
-  preview = $state<string | null>(null);
+  /** The developed picture, as a frame the GPU viewport fetches. */
+  preview = $state<FrameRef | null>(null);
   rendering = $state(false);
   error = $state<string | null>(null);
   /** Bumped whenever the settings change, so the print stage re-renders. */
@@ -191,7 +192,7 @@ class DevelopStage {
       const raw = this.showWholeFrame ? { ...this.raw, crop: null } : { ...this.raw };
       // Dragging: a smaller render keeps up with the pointer. The settled one follows.
       const px = this.dragging ? Math.min(this.detail, DRAG_PX) : this.detail;
-      this.preview = await backend.developPreview(this.id, raw, px, this.frameAt);
+      this.preview = await backend.developFrame(this.id, raw, px, this.frameAt);
       this.error = null;
     } catch (e) {
       this.error = String(e);
