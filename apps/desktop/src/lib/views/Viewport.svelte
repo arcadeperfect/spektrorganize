@@ -29,8 +29,11 @@
     onzoom?: (zoom: number, pxPerTexel: number) => void;
     /** Where the picture sits in the viewport, in CSS pixels; null when nothing is shown. */
     onlayout?: (rect: Rect | null) => void;
+    /** Quarter turns clockwise to draw the picture with, on top of whatever it is. */
+    turns?: number;
   }
-  let { frame = null, src = null, key, onzoom, onlayout }: Props = $props();
+  let { frame = null, src = null, key, onzoom, onlayout, turns = 0 }: Props = $props();
+  const quarter = $derived(((turns % 4) + 4) % 4);
 
   let host = $state<HTMLDivElement | undefined>();
   let canvas = $state<HTMLCanvasElement | undefined>();
@@ -62,13 +65,14 @@
     gl: WebGL2RenderingContext;
     program: WebGLProgram;
     rectLoc: WebGLUniformLocation;
+    turnLoc: WebGLUniformLocation;
     texture: WebGLTexture | null;
   };
   let gpu: Gpu | Gl | null = null;
   let ready = false;
 
   const WGSL = `
-    struct U { rect: vec4<f32> };
+    struct U { rect: vec4<f32>, turn: vec4<f32> };
     @group(0) @binding(0) var<uniform> u: U;
     @group(0) @binding(1) var t: texture_2d<f32>;
     @group(0) @binding(2) var s: sampler;
@@ -78,7 +82,10 @@
       let p = q[i];
       var o: V;
       o.pos = vec4(u.rect.x + p.x * u.rect.z, u.rect.y + p.y * u.rect.w, 0., 1.);
-      o.uv = vec2(p.x, 1. - p.y);
+      // Rotate the sampling about the centre: the quad is already the rotated shape.
+      let q = vec2(p.x, 1. - p.y) - vec2(0.5, 0.5);
+      let c = u.turn.x; let sn = u.turn.y;
+      o.uv = vec2(c * q.x + sn * q.y, -sn * q.x + c * q.y) + vec2(0.5, 0.5);
       return o;
     }
     @fragment fn fs(v: V) -> @location(0) vec4<f32> { return textureSample(t, s, v.uv); }
@@ -109,7 +116,7 @@
       fragment: { module, entryPoint: "fs", targets: [{ format: "rgba8unorm" }] },
       primitive: { topology: "triangle-list" },
     });
-    const uniforms = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const uniforms = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     return {
       kind: "webgpu",
       device,
@@ -130,12 +137,13 @@
     const gl = c.getContext("webgl2", { alpha: false, antialias: false, premultipliedAlpha: false });
     if (!gl) return null;
     const vsSrc = `#version 300 es
-      uniform vec4 rect; out vec2 uv;
+      uniform vec4 rect; uniform vec4 turn; out vec2 uv;
       void main() {
         vec2 q[6] = vec2[6](vec2(0,0), vec2(1,0), vec2(0,1), vec2(0,1), vec2(1,0), vec2(1,1));
         vec2 p = q[gl_VertexID];
         gl_Position = vec4(rect.x + p.x * rect.z, rect.y + p.y * rect.w, 0., 1.);
-        uv = vec2(p.x, 1. - p.y);
+        vec2 c = vec2(p.x, 1. - p.y) - vec2(0.5);
+        uv = vec2(turn.x * c.x + turn.y * c.y, -turn.y * c.x + turn.x * c.y) + vec2(0.5);
       }`;
     const fsSrc = `#version 300 es
       precision highp float; uniform sampler2D t; in vec2 uv; out vec4 o;
@@ -151,7 +159,7 @@
     gl.attachShader(program, sh(gl.FRAGMENT_SHADER, fsSrc));
     gl.linkProgram(program);
     gl.useProgram(program);
-    return { kind: "webgl2", gl, program, rectLoc: gl.getUniformLocation(program, "rect")!, texture: null };
+    return { kind: "webgl2", gl, program, rectLoc: gl.getUniformLocation(program, "rect")!, turnLoc: gl.getUniformLocation(program, "turn")!, texture: null };
   }
 
   // ---- a frame arrives ----
@@ -206,8 +214,8 @@
       }
       // Each mip level from the one above, drawn with a linear sampler: a box-ish reduce.
       const encoder = device.createCommandEncoder();
-      const full = new Float32Array([-1, -1, 2, 2]);
-      const mipUniforms = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      const full = new Float32Array([-1, -1, 2, 2, 1, 0, 0, 0]);
+      const mipUniforms = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       device.queue.writeBuffer(mipUniforms, 0, full);
       for (let level = 1; level < levels; level++) {
         const group = device.createBindGroup({
@@ -261,9 +269,10 @@
     const W = host.clientWidth;
     const H = host.clientHeight;
     if (!W || !H) return null;
-    const fit = Math.min(W / texW, H / texH);
-    const w = texW * fit * zoom;
-    const h = texH * fit * zoom;
+    const [tw, th] = quarter % 2 ? [texH, texW] : [texW, texH];
+    const fit = Math.min(W / tw, H / th);
+    const w = tw * fit * zoom;
+    const h = th * fit * zoom;
     return { x: (W - w) / 2 + panX, y: (H - h) / 2 + panY, w, h };
   }
 
@@ -280,7 +289,7 @@
     }
     const r = placement();
     onlayout?.(r);
-    const pxPerTexel = r ? (r.w / texW) * dpr : 0;
+    const pxPerTexel = r ? (r.w / (quarter % 2 ? texH : texW)) * dpr : 0;
     onzoom?.(zoom, pxPerTexel);
 
     // Snap the picture to whole device pixels so a pan never lands it between two.
@@ -290,8 +299,9 @@
           const y0 = Math.round(r.y * dpr) / ph;
           const w = Math.round(r.w * dpr) / pw;
           const h = Math.round(r.h * dpr) / ph;
-          // NDC: x right, y up; the quad's origin is its bottom-left.
-          return new Float32Array([x0 * 2 - 1, 1 - (y0 + h) * 2, w * 2, h * 2]);
+          // NDC: x right, y up; the quad's origin is its bottom-left. Then the turn, as cos/sin.
+          const a = (quarter * Math.PI) / 2;
+          return new Float32Array([x0 * 2 - 1, 1 - (y0 + h) * 2, w * 2, h * 2, Math.cos(a), Math.sin(a), 0, 0]);
         })()
       : null;
     const nearest = pxPerTexel >= 1;
@@ -319,7 +329,8 @@
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, nearest ? gl.NEAREST : gl.LINEAR_MIPMAP_LINEAR);
-        gl.uniform4fv(rectLoc, rect);
+        gl.uniform4fv(rectLoc, rect.subarray(0, 4));
+        gl.uniform4fv(gpu.turnLoc, rect.subarray(4, 8));
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
     }
@@ -328,7 +339,8 @@
   /** The zoom at which one picture pixel is one screen pixel. */
   function onePixel(): number | null {
     if (!host || !texW || !texH) return null;
-    const fit = Math.min(host.clientWidth / texW, host.clientHeight / texH);
+    const [tw, th] = quarter % 2 ? [texH, texW] : [texW, texH];
+    const fit = Math.min(host.clientWidth / tw, host.clientHeight / th);
     return 1 / (fit * (window.devicePixelRatio || 1));
   }
 
@@ -353,6 +365,12 @@
     const f = frame;
     const u = src;
     if (ready) load(f, u);
+  });
+
+  // A turn changes the shape on screen.
+  $effect(() => {
+    void quarter;
+    draw();
   });
 
   // The host changes size with the window and the panels.

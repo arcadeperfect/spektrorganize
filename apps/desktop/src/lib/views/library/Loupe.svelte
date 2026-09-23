@@ -3,7 +3,7 @@
   // the current listing, Blender navigation for zoom and pan, and the two
   // stages a step away. Shows the largest preview the catalog has; the develop
   // and print stages render their own.
-  import { catalog, api, duration as durationText, looks as looksApi, type FrameRef, type RenderInfo } from "../../api";
+  import { catalog, api, duration as durationText, looks as looksApi, type FrameRef, type RawSettings, type RenderInfo } from "../../api";
   import { library as lib } from "../../library.svelte";
   import VideoExport from "./VideoExport.svelte";
   import { develop } from "../../photo.svelte";
@@ -42,6 +42,7 @@
     else clip = null;
     // At the chosen quality, so high or native carries from photo to photo.
     applyQuality(a.id);
+    loadTurns(a.id);
     for (const j of [index - 1, index + 1]) {
       const n = lib.item(j);
       if (n) load(n.id);
@@ -54,6 +55,33 @@
    * size — a second or so for a RAW, so it is on request.
    */
   let qualBusy = $state(false);
+  /** The photo's stored quarter turns (its develop setting), shown here and saved when changed. */
+  let turns = $state(0);
+  let turnsRaw: RawSettings | null = null;
+  async function loadTurns(id: number) {
+    turns = 0;
+    turnsRaw = null;
+    try {
+      const raw = await looksApi.rawGet(id);
+      if (lib.item(index)?.id === id) {
+        turnsRaw = raw;
+        turns = raw.rotate ?? 0;
+      }
+    } catch {
+      // No settings yet: unrotated.
+    }
+  }
+  /** Turn the photo a quarter, and keep it: Develop and Print will show it the same way. */
+  async function turn(dir: -1 | 1) {
+    const a = asset;
+    if (!a) return;
+    const raw = turnsRaw ?? (await looksApi.rawGet(a.id).catch(() => null));
+    if (!raw) return;
+    const next = { ...raw, rotate: (((raw.rotate ?? 0) + dir) % 4 + 4) % 4, crop: null };
+    turnsRaw = next;
+    turns = next.rotate;
+    await looksApi.rawSet([a.id], next).catch((e) => (lib.error = String(e)));
+  }
   /** The photo decoded at its own size, for native quality. */
   let fullFrame = $state<FrameRef | null>(null);
 
@@ -194,14 +222,6 @@
         e.preventDefault();
         close();
         break;
-      case "ArrowLeft":
-        e.preventDefault();
-        go(-1);
-        break;
-      case "ArrowRight":
-        e.preventDefault();
-        go(1);
-        break;
       case "d":
         openStage("develop");
         break;
@@ -217,6 +237,17 @@
         setQuality(order[(order.indexOf(quality.value) + 1) % order.length]);
         break;
       }
+      case "ArrowLeft":
+      case "ArrowRight":
+        if (e.shiftKey) {
+          // Shift + ← / → turns the photo.
+          e.preventDefault();
+          turn(e.key === "ArrowRight" ? 1 : -1);
+          break;
+        }
+        e.preventDefault();
+        go(e.key === "ArrowRight" ? 1 : -1);
+        break;
       case "[":
         e.preventDefault();
         cycle(-1);
@@ -267,6 +298,8 @@
       {#if zoom !== 1}<span class="muted small mono">{Math.round(zoom * 100)}%</span>{/if}
     </div>
     <div class="row">
+      <button class="nav" onclick={() => turn(-1)} disabled={asset?.kind === "video"} title="Rotate anticlockwise (Shift+←) — kept with the photo">⟲</button>
+      <button class="nav" onclick={() => turn(1)} disabled={asset?.kind === "video"} title="Rotate clockwise (Shift+→) — kept with the photo">⟳</button>
       <button class="nav" disabled={index === 0} onclick={() => go(-1)} title="Previous (←)">‹</button>
       <button class="nav" disabled={index >= lib.total - 1} onclick={() => go(1)} title="Next (→)">›</button>
       <button onclick={() => openStage("develop")} title="Develop this photo (D)">Develop…</button>
@@ -303,7 +336,7 @@
           <span class="muted">Opening the clip…</span>
         {/if}
       {:else if src || fullFrame}
-        <Viewport frame={fullFrame} src={fullFrame ? null : src} key={asset?.id} onzoom={(z) => onZoom(z)} />
+        <Viewport frame={fullFrame} src={fullFrame ? null : src} key={asset?.id} {turns} onzoom={(z) => onZoom(z)} />
       {:else}
         <span class="muted">Loading…</span>
       {/if}
