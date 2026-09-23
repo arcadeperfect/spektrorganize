@@ -229,3 +229,31 @@ mod tests {
         assert!(!big.with_extension("jpg.part").exists());
     }
 }
+
+#[cfg(test)]
+mod orientation_probe {
+    use super::*;
+
+    /// For every RAW under `SPEKTRO_TEST_RAW_DIR`: the RAW's orientation, the embedded JPEG's
+    /// own tag, and the shape of the thumbnail this module makes from it.
+    #[test]
+    #[ignore = "needs RAW files"]
+    fn embedded_previews_come_out_the_right_way_up() {
+        let Ok(dir) = std::env::var("SPEKTRO_TEST_RAW_DIR") else { return };
+        let out = std::env::temp_dir().join("spektro-orient-probe.jpg");
+        let mut files: Vec<_> = walkdir::WalkDir::new(&dir)
+            .into_iter()
+            .flatten()
+            .filter(|e| e.path().extension().map(|x| x.to_ascii_lowercase() == "arw" || x.to_ascii_lowercase() == "raf").unwrap_or(false))
+            .map(|e| e.path().to_path_buf())
+            .collect();
+        files.sort();
+        for p in files.iter().take(12) {
+            let mut raw = match RawFile::open(p) { Ok(r) => r, Err(_) => continue };
+            let raw_o = raw.meta().orientation.unwrap_or(1);
+            let tag = raw.largest_jpeg_preview().ok().flatten().and_then(|b| exif_orientation(&b));
+            let dims = make_thumbnails(p, PreviewSource::EmbeddedPreview, &[(256, &out)]).ok().flatten();
+            println!("{:<14} raw orientation {}  embedded tag {:?}  thumb {:?}", p.file_name().unwrap().to_string_lossy(), raw_o, tag, dims);
+        }
+    }
+}
