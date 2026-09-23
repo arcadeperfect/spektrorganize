@@ -19,7 +19,10 @@
   }
 
   interface Props {
-    frame: FrameRef | null;
+    /** A rendered frame from the app… */
+    frame?: FrameRef | null;
+    /** …or an image the browser can decode (a cached JPEG, a data URL). One of the two. */
+    src?: string | null;
     /** Refit when this changes (the photo, its shape). */
     key?: unknown;
     /** Zoom relative to fit, and screen pixels per picture pixel. */
@@ -27,7 +30,7 @@
     /** Where the picture sits in the viewport, in CSS pixels; null when nothing is shown. */
     onlayout?: (rect: Rect | null) => void;
   }
-  let { frame, key, onzoom, onlayout }: Props = $props();
+  let { frame = null, src = null, key, onzoom, onlayout }: Props = $props();
 
   let host = $state<HTMLDivElement | undefined>();
   let canvas = $state<HTMLCanvasElement | undefined>();
@@ -153,25 +156,37 @@
 
   // ---- a frame arrives ----
   let loading = 0;
-  async function load(f: FrameRef | null) {
+  async function load(f: FrameRef | null, url: string | null) {
     const seq = ++loading;
-    if (!f || !gpu) {
+    if (!gpu || (!f && !url)) {
       texW = texH = 0;
       draw();
       return;
     }
-    const res = await fetch(looksApi.frameUrl(f.token));
-    if (!res.ok) return;
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (seq !== loading) return; // a newer frame overtook this one
-    if (bytes.length < f.width * f.height * 4) return;
-    upload(bytes, f.width, f.height);
-    texW = f.width;
-    texH = f.height;
+    if (f) {
+      const res = await fetch(looksApi.frameUrl(f.token));
+      if (!res.ok) return;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (seq !== loading) return; // a newer picture overtook this one
+      if (bytes.length < f.width * f.height * 4) return;
+      upload(bytes, f.width, f.height);
+      texW = f.width;
+      texH = f.height;
+    } else if (url) {
+      // The browser decodes it; we still draw it ourselves.
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const bitmap = await createImageBitmap(await res.blob(), { colorSpaceConversion: "none", premultiplyAlpha: "none" });
+      if (seq !== loading) return;
+      upload(bitmap, bitmap.width, bitmap.height);
+      texW = bitmap.width;
+      texH = bitmap.height;
+      bitmap.close();
+    }
     draw();
   }
 
-  function upload(bytes: Uint8Array<ArrayBuffer>, w: number, h: number) {
+  function upload(bytes: Uint8Array<ArrayBuffer> | ImageBitmap, w: number, h: number) {
     if (!gpu) return;
     if (gpu.kind === "webgpu") {
       const g = gpu;
@@ -184,7 +199,11 @@
         mipLevelCount: levels,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
       });
-      device.queue.writeTexture({ texture }, bytes, { bytesPerRow: w * 4, rowsPerImage: h }, { width: w, height: h });
+      if (bytes instanceof ImageBitmap) {
+        device.queue.copyExternalImageToTexture({ source: bytes }, { texture }, { width: w, height: h });
+      } else {
+        device.queue.writeTexture({ texture }, bytes, { bytesPerRow: w * 4, rowsPerImage: h }, { width: w, height: h });
+      }
       // Each mip level from the one above, drawn with a linear sampler: a box-ish reduce.
       const encoder = device.createCommandEncoder();
       const full = new Float32Array([-1, -1, 2, 2]);
@@ -226,7 +245,8 @@
       const t = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, t);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+      if (bytes instanceof ImageBitmap) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
       gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -321,17 +341,18 @@
       gpu = (await initWebGpu(c)) ?? initWebGl(c);
       if (!alive) return;
       ready = true;
-      load(frame);
+      load(frame, src);
     })();
     return () => {
       alive = false;
     };
   });
 
-  // A new frame; loaded once the GPU is up.
+  // A new picture; loaded once the GPU is up.
   $effect(() => {
     const f = frame;
-    if (ready) load(f);
+    const u = src;
+    if (ready) load(f, u);
   });
 
   // The host changes size with the window and the panels.

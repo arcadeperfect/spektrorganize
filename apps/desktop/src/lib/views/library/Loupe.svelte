@@ -3,12 +3,12 @@
   // the current listing, Blender navigation for zoom and pan, and the two
   // stages a step away. Shows the largest preview the catalog has; the develop
   // and print stages render their own.
-  import { catalog, api, duration as durationText, looks as looksApi, type RenderInfo } from "../../api";
+  import { catalog, api, duration as durationText, looks as looksApi, type FrameRef, type RenderInfo } from "../../api";
   import { library as lib } from "../../library.svelte";
   import VideoExport from "./VideoExport.svelte";
   import { develop } from "../../photo.svelte";
   import { store } from "../../state.svelte";
-  import { panzoom } from "../../panzoom";
+  import Viewport from "../Viewport.svelte";
 
   const index = $derived(lib.loupe ?? 0);
   const asset = $derived(lib.item(index));
@@ -54,6 +54,7 @@
     src = null;
     detail = 0;
     full = false;
+    fullFrame = null;
     if (a.renders) loadPrints(a.id);
     else ((prints = []), (shown = -1));
     if (a.kind === "video") loadClip(a.id);
@@ -74,6 +75,8 @@
    */
   let fullBusy = $state(false);
   let full = $state(false);
+  /** The clip or photo decoded at its own size, when asked for. */
+  let fullFrame = $state<FrameRef | null>(null);
 
   /**
    * The photo's prints, so the viewer can flick between the camera rendition and
@@ -144,9 +147,9 @@
       const info = await looksApi.input(a.id);
       const px = Math.max(info.width ?? 0, info.height ?? 0) || 16384;
       // develop_preview hands back a data URL, not a path: use it as it comes.
-      const p = await looksApi.developPreview(a.id, raw, px);
+      const f = await looksApi.developFrame(a.id, raw, px);
       if (lib.item(index)?.id === a.id) {
-        src = p;
+        fullFrame = f;
         full = true;
       }
     } catch (e) {
@@ -289,7 +292,6 @@
   </div>
   <div
     class="stage"
-    use:panzoom={{ key: asset?.id, onzoom: onZoom }}
     role="img"
     aria-label="Photo"
     oncontextmenu={(e) => {
@@ -306,8 +308,8 @@
         {:else}
           <span class="muted">Opening the clip…</span>
         {/if}
-      {:else if src}
-        <img src={src} alt={asset?.name ?? ""} />
+      {:else if src || fullFrame}
+        <Viewport frame={fullFrame} src={fullFrame ? null : src} key={asset?.id} onzoom={(z) => onZoom(z)} />
       {:else}
         <span class="muted">Loading…</span>
       {/if}
@@ -380,7 +382,6 @@
     align-items: center;
     justify-content: center;
   }
-  .view img,
   .view video {
     max-width: 100%;
     max-height: 100%;

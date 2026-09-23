@@ -165,7 +165,7 @@
         </button>
       </div>
     </div>
-    <div class="stage">
+    <div class="stage pic">
       {#if D.id === null}
         <div class="muted empty">Select photos in the Library; the first one previews here.</div>
       {:else if L.preview || L.before || L.rendering}
@@ -516,5 +516,15 @@
   .picker input[type="range"] {
     flex: 1;
     min-width: 0;
+  }
+  /* The picture's box: the viewport fills it, and only it. Without a positioned
+     ancestor an absolute viewport pins to the page and hides everything. */
+  .stage.pic {
+    position: relative;
+    overflow: hidden;
+    padding: 0;
+    min-height: 0;
+    background: #0e0d0c;
+    border-radius: var(--radius);
   }
 </style>

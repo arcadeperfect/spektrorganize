@@ -443,4 +443,9 @@
     margin-top: 40px;
     text-align: center;
   }
+  .pv-view img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
 </style>
