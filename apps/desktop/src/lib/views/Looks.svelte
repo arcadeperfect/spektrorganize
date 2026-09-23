@@ -9,6 +9,18 @@
   import { library as lib } from "../library.svelte";
   import { store } from "../state.svelte";
   import Control from "./looks/Control.svelte";
+  import Rgb from "./looks/Rgb.svelte";
+
+  /** Frame sizes, as the grain scale needs them (long edge in mm). */
+  const FORMATS = [
+    { value: "24", label: "Half frame (24 mm)" },
+    { value: "35", label: "Standard 35 (36 mm)" },
+    { value: "56", label: "Medium 6×6 (56 mm)" },
+    { value: "70", label: "Medium 6×7 (70 mm)" },
+    { value: "120", label: "Large 4×5 (120 mm)" },
+  ];
+  /** Diffusion filter families this build knows. */
+  const MIST = [{ value: "black_pro_mist", label: "Black Pro-Mist" }];
   import JobPanel from "./JobPanel.svelte";
   import Viewport from "./Viewport.svelte";
 
@@ -266,39 +278,30 @@
         {/if}
       </details>
 
+      <!-- The groups follow spektrafilm's Flow panel, so a look reads the same in both apps.
+           Anything of ours that Flow does not show sits at the tail of its group. -->
       <details open>
-        <summary>Film exposure and colour</summary>
-        <Control label="Film exposure (EV)" path="camera.exposure_compensation_ev" min={-3} max={3} step={0.05} />
+        <summary>Film</summary>
+        <Control label="Spectral upsampling" path="settings.rgb_to_raw_method" kind="select" options={opt(L.meta.upsamplers)} />
+        <Control label="Film format" path="camera.film_format_mm" kind="select" options={FORMATS} hint="Sets how big the grain is on the frame" />
+        <Control label="Exposure (EV)" path="camera.exposure_compensation_ev" min={-3} max={3} step={0.05} />
         <Control label="Auto exposure" path="camera.auto_exposure" kind="check" />
         <Control label="Taking filter" path="camera.color_filter" kind="select" options={filters} />
-        {#if !scanning}
-          <Control label="Print exposure" path="enlarger.print_exposure" min={0.2} max={3} step={0.01} />
-          <Control label="Magenta filter" path="enlarger.m_filter_shift" min={-30} max={30} step={0.5} digits={1} hint="Enlarger magenta shift (CC). + = less green in the print." />
-          <Control label="Yellow filter" path="enlarger.y_filter_shift" min={-30} max={30} step={0.5} digits={1} hint="Enlarger yellow shift (CC). + = less blue in the print." />
-          <button disabled={!!L.busy} onclick={() => L.neutralize()} title="Solve the filters so a midgray negative prints neutral">Neutralize filters</button>
-        {/if}
-      </details>
-
-      <details>
-        <summary>Film character</summary>
         <Control label="Contrast (film gamma)" path="film_render.chemistry.gamma_factor" min={0.25} max={4} step={0.01} />
-        <Control label="Grain" path="film_render.grain.active" kind="check" />
-        <div class="stack tight">
-          <span class="small row spread">Grain size (RMS) <span class="mono">{grainValue().toFixed(1)}</span></span>
-          <input type="range" min="0" max="40" step="0.25" value={grainValue()} oninput={(e) => setGrain(Number((e.target as HTMLInputElement).value))} />
-        </div>
-        <Control label="Grain softness (px)" path="film_render.grain.blur" min={0} max={3} step={0.05} />
-        <Control label="Halation" path="film_render.halation.active" kind="check" />
-        <Control label="Halation amount" path="film_render.halation.halation_amount" min={0} max={3} step={0.05} />
-        <Control label="Scatter amount" path="film_render.halation.scatter_amount" min={0} max={3} step={0.05} />
-        <Control label="Interlayer effects (DIR)" path="film_render.dir_couplers.active" kind="check" />
-        <Control label="DIR amount" path="film_render.dir_couplers.amount" min={0} max={2} step={0.05} />
         <Control label="Film base density" path="film_render.base.scale" min={0} max={3} step={0.05} />
       </details>
 
       {#if !scanning}
-        <details>
-          <summary>Paper</summary>
+        <details open>
+          <summary>Print</summary>
+          <Control label="Exposure" path="enlarger.print_exposure" min={0.2} max={3} step={0.01} />
+          <Control label="C filter" path="enlarger.c_filter_neutral" min={0} max={100} step={0.5} digits={1} hint="Cyan filtration (CC) on the enlarger" />
+          <Control label="M filter shift" path="enlarger.m_filter_shift" min={-30} max={30} step={0.5} digits={1} hint="Enlarger magenta shift (CC). + = less green in the print." />
+          <Control label="Y filter shift" path="enlarger.y_filter_shift" min={-30} max={30} step={0.5} digits={1} hint="Enlarger yellow shift (CC). + = less blue in the print." />
+          <Control label="Preflash exposure" path="enlarger.preflash_exposure" min={0} max={1} step={0.005} digits={3} hint="A little even light on the paper before the print: lifts the toe, softens contrast" />
+          <Control label="Preflash M filter shift" path="enlarger.preflash_m_filter_shift" min={-30} max={30} step={0.5} digits={1} />
+          <Control label="Preflash Y filter shift" path="enlarger.preflash_y_filter_shift" min={-30} max={30} step={0.5} digits={1} />
+          <button disabled={!!L.busy} onclick={() => L.neutralize()} title="Solve the filters so a midgray negative prints neutral">Neutralize filters</button>
           <Control label="Paper contrast" path="print_render.chemistry.gamma_factor" min={0.25} max={4} step={0.01} />
           <Control label="Paper base density" path="print_render.base.scale" min={0} max={5} step={0.05} />
           <Control label="Glare" path="print_render.glare.active" kind="check" />
@@ -306,13 +309,60 @@
       {/if}
 
       <details>
-        <summary>Scan and output</summary>
+        <summary>DIR couplers</summary>
+        <Control label="Enabled" path="film_render.dir_couplers.active" kind="check" />
+        <Control label="Amount" path="film_render.dir_couplers.amount" min={0} max={2} step={0.05} />
+        <Control label="Diffusion (µm)" path="film_render.dir_couplers.diffusion_size_um" min={0} max={100} step={0.5} digits={1} />
+        <Control label="Same-layer inhibition" path="film_render.dir_couplers.inhibition_samelayer" min={0} max={2} step={0.05} />
+        <Control label="Interlayer inhibition" path="film_render.dir_couplers.inhibition_interlayer" min={0} max={2} step={0.05} />
+      </details>
+
+      <details>
+        <summary>Grain</summary>
+        <Control label="Enabled" path="film_render.grain.active" kind="check" />
+        <div class="stack tight">
+          <span class="small row spread">Amount (RMS) <span class="mono">{grainValue().toFixed(1)}</span></span>
+          <input type="range" min="0" max="40" step="0.25" value={grainValue()} oninput={(e) => setGrain(Number((e.target as HTMLInputElement).value))} />
+        </div>
+        <Control label="Particle area (µm²)" path="film_render.grain.agx_particle_area_um2" min={0.02} max={2} step={0.01} />
+        <Control label="Softness (px)" path="film_render.grain.blur" min={0} max={3} step={0.05} />
+      </details>
+
+      <details>
+        <summary>Halation</summary>
+        <Control label="Enabled" path="film_render.halation.active" kind="check" />
+        <Control label="Amount" path="film_render.halation.halation_amount" min={0} max={3} step={0.05} />
+        <Control label="Scale" path="film_render.halation.halation_spatial_scale" min={0.1} max={4} step={0.05} hint="How far the glow spreads" />
+        <Control label="Boost (EV)" path="film_render.halation.boost_ev" min={0} max={4} step={0.05} hint="Extra light in the highlights that seed the glow" />
+        <Rgb label="Strength RGB" path="film_render.halation.halation_strength" max={0.5} step={0.005} digits={3} />
+        <Control label="Scatter amount" path="film_render.halation.scatter_amount" min={0} max={3} step={0.05} />
+      </details>
+
+      <details>
+        <summary>Diffusion</summary>
+        <Control label="Camera enabled" path="camera.diffusion_filter.active" kind="check" />
+        <Control label="Camera family" path="camera.diffusion_filter.filter_family" kind="select" options={MIST} />
+        <Control label="Camera strength" path="camera.diffusion_filter.strength" min={0} max={2} step={0.05} />
+        <Control label="Camera halo warmth" path="camera.diffusion_filter.halo_warmth" min={-1} max={1} step={0.05} />
+        {#if !scanning}
+          <Control label="Print enabled" path="enlarger.diffusion_filter.active" kind="check" />
+          <Control label="Print family" path="enlarger.diffusion_filter.filter_family" kind="select" options={MIST} />
+          <Control label="Print strength" path="enlarger.diffusion_filter.strength" min={0} max={2} step={0.05} />
+          <Control label="Print halo warmth" path="enlarger.diffusion_filter.halo_warmth" min={-1} max={1} step={0.05} />
+        {/if}
+      </details>
+
+      <details>
+        <summary>Scanner</summary>
+        <Control label="White correction" path="scanner.white_correction" kind="check" />
+        <Control label="Black correction" path="scanner.black_correction" kind="check" />
+        <Control label="White level" path="scanner.white_level" min={0.5} max={1} step={0.005} digits={3} />
+        <Control label="Black level" path="scanner.black_level" min={0} max={0.2} step={0.001} digits={3} />
         <div class="stack tight">
           <span class="small row spread">Sharpening <span class="mono">{usm()[1].toFixed(2)}</span></span>
           <input type="range" min="0" max="2" step="0.05" value={usm()[1]} oninput={(e) => L.set("scanner.unsharp_mask", [usm()[0], Number((e.target as HTMLInputElement).value)])} />
         </div>
         <Control label="Gamut compression" path="io.output_gamut_compress.algorithm" kind="select" options={opt(L.meta.gamut_algorithms)} />
-        <Control label="Spectral upsampling" path="settings.rgb_to_raw_method" kind="select" options={opt(L.meta.upsamplers)} />
       </details>
 
       <details>

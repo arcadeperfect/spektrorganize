@@ -51,7 +51,14 @@
   {:else if kind === "check"}
     <label class="row"><input type="checkbox" checked={!!value} onchange={(e) => L.set(path, (e.target as HTMLInputElement).checked)} /> <span class="muted">on</span></label>
   {:else}
-    <select value={value ?? ""} onchange={(e) => L.set(path, (e.target as HTMLSelectElement).value)}>
+    <select
+      value={value == null ? "" : String(value)}
+      onchange={(e) => {
+        const v = (e.target as HTMLSelectElement).value;
+        // A numeric parameter offered as a menu (film format) stays a number.
+        L.set(path, typeof value === "number" ? Number(v) : v);
+      }}
+    >
       {#each options as o (o.value)}
         <option value={o.value}>{o.label}</option>
       {/each}

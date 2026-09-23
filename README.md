@@ -114,6 +114,15 @@ presets moved to the numpad (`Numpad 0` fit, `Numpad 1` 1:1) so the digits are f
 Ratings, flags and keywords live in the catalog database only — nothing is written to your photo
 files, and no XMP sidecars are produced yet.
 
+## The Print panel
+
+Grouped as spektrafilm's own Flow panel is — Film, Print, DIR couplers, Grain, Halation,
+Diffusion, Scanner — so a look reads the same in both apps, with this app's extra controls at the
+tail of each group. Every path the panel binds is checked against the parameter model by a test.
+What Flow shows that this rev of spektrafilm-rs has no field for (push/pull, shadow and highlight
+shape, print timing, output role, colour adaptation, grain model and saturation, lens correction)
+waits on a dependency bump.
+
 ## The viewport
 
 Develop and Print draw the picture on a WebGPU canvas (WebGL2 when that is missing), not with an

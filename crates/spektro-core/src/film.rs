@@ -352,3 +352,38 @@ impl Renderer {
         Rendered { exr, jpeg }
     }
 }
+
+#[cfg(test)]
+mod flow_paths {
+    use super::*;
+
+    /// Every parameter path the Print panel binds must exist in the model, or a slider would
+    /// write a field the pipeline never reads. Resolving a preset that overrides them all is
+    /// the check: an unknown field is a deserialisation error.
+    #[test]
+    fn every_panel_path_is_a_real_parameter() {
+        let data_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/spektrafilm-data");
+        let params = serde_json::json!({
+            "settings": { "rgb_to_raw_method": "hanatos2025" },
+            "camera": { "film_format_mm": 56.0, "exposure_compensation_ev": 0.3, "auto_exposure": true, "color_filter": "none",
+                        "diffusion_filter": { "active": true, "filter_family": "black_pro_mist", "strength": 0.5, "halo_warmth": 0.1 } },
+            "enlarger": { "print_exposure": 1.1, "c_filter_neutral": 10.0, "m_filter_shift": 2.0, "y_filter_shift": -1.0,
+                          "preflash_exposure": 0.02, "preflash_m_filter_shift": 1.0, "preflash_y_filter_shift": 1.0,
+                          "diffusion_filter": { "active": true, "filter_family": "black_pro_mist", "strength": 0.5, "halo_warmth": 0.0 } },
+            "film_render": { "chemistry": { "gamma_factor": 1.1 }, "base": { "scale": 1.0 },
+                             "dir_couplers": { "active": true, "amount": 1.0, "diffusion_size_um": 20.0, "inhibition_samelayer": 1.0, "inhibition_interlayer": 1.0 },
+                             "grain": { "active": true, "agx_particle_area_um2": 0.2, "blur": 0.5 },
+                             "halation": { "active": true, "halation_amount": 1.0, "halation_spatial_scale": 1.0, "boost_ev": 0.5,
+                                           "halation_strength": [0.05, 0.02, 0.0], "scatter_amount": 1.0 } },
+            "print_render": { "chemistry": { "gamma_factor": 1.0 }, "base": { "scale": 1.0 }, "glare": { "active": false } },
+            "scanner": { "white_correction": true, "black_correction": true, "white_level": 0.98, "black_level": 0.01 },
+            "io": { "output_gamut_compress": { "algorithm": "cam16ucs" } }
+        });
+        let preset = Preset { name: "paths".into(), film: "kodak_portra_400".into(), print: "kodak_portra_endura".into(), params };
+        let (_, _, p) = preset.resolve(&data_dir).expect("every path resolves");
+        assert_eq!(p.camera.film_format_mm, 56.0);
+        assert_eq!(p.enlarger.c_filter_neutral, 10.0);
+        assert_eq!(p.film_render.halation.halation_strength, [0.05, 0.02, 0.0]);
+        assert!(p.scanner.white_correction);
+    }
+}
