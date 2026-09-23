@@ -4,6 +4,7 @@
 
 import { api, looks as backend, type Look, type LookMeta, type PresetSummary, type FrameRef } from "./api";
 import { develop } from "./photo.svelte";
+import type { Quality } from "./quality.svelte";
 
 export const ROUTE_PRINT = "input > film > print > scan";
 export const ROUTE_SCAN = "input > film > scan";
@@ -242,8 +243,8 @@ class Looks {
   }
 
   /** Render every pixel, for judging grain and sharpness. */
-  setFull(on: boolean) {
-    develop.setFull(on, () => {
+  setQuality(q: Quality) {
+    develop.setQuality(q, () => {
       this.before = null;
       this.refresh();
     });

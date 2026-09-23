@@ -26,6 +26,7 @@
   const MIST = [{ value: "black_pro_mist", label: "Black Pro-Mist" }];
   import JobPanel from "./JobPanel.svelte";
   import Viewport from "./Viewport.svelte";
+  import { quality, QUALITIES } from "../quality.svelte";
 
   let importing = $state(false);
   let url = $state("");
@@ -237,9 +238,11 @@
       {#if L.busy}<div class="muted busy">{L.busy}</div>{/if}
       <div class="tag zoom right">
         {#if zoom !== 1}<span title="Of the picture's own pixels; 100% is one per screen pixel">{Math.round((printPx || zoom) * 100)}%</span>{/if}
-        <button class="full" class:on={D.full} onclick={() => L.setFull(!D.full)} title="Render every pixel ({D.native ? `${D.native} px` : 'full size'}) instead of a fitted preview — slower">
-          {D.full ? "full res" : `${D.detail} px`}
-        </button>
+        <span class="qual" role="group" aria-label="Render quality">
+          {#each QUALITIES as q (q.id)}
+            <button class="full" class:on={quality.value === q.id} onclick={() => L.setQuality(q.id)} title={q.hint}>{q.label}</button>
+          {/each}
+        </span>
       </div>
     </div>
       {#if D.isVideo && D.input?.duration}
@@ -632,5 +635,9 @@
   .modes .on {
     color: var(--accent-2);
     border-color: var(--accent-2);
+  }
+  .qual {
+    display: inline-flex;
+    gap: 2px;
   }
 </style>

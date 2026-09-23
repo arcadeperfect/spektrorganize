@@ -10,6 +10,7 @@
   import JobPanel from "./JobPanel.svelte";
   import CropOverlay from "./CropOverlay.svelte";
   import Viewport from "./Viewport.svelte";
+  import { quality, QUALITIES } from "../quality.svelte";
 
   let zoom = $state(1);
   /** Crop mode: the overlay only appears while you are cropping. */
@@ -189,9 +190,11 @@
             {decoded[0]}×{decoded[1]}{#if D.input?.width && D.input?.height}<span class="muted"> of {D.input.width}×{D.input.height}</span>{/if}
           </span>
         {/if}
-        <button class="full" class:on={D.full} onclick={() => D.setFull(!D.full, () => D.refresh())} title="Render every pixel ({D.native ? `${D.native} px` : 'full size'}) instead of a fitted preview — slower">
-          {D.full ? "full res" : `${D.detail} px`}
-        </button>
+        <span class="qual" role="group" aria-label="Render quality">
+          {#each QUALITIES as q (q.id)}
+            <button class="full" class:on={quality.value === q.id} onclick={() => D.setQuality(q.id, () => D.refresh())} title={q.hint}>{q.label}</button>
+          {/each}
+        </span>
       </div>
     </div>
       {#if D.isVideo && D.input?.duration}
@@ -477,5 +480,9 @@
   .picker input[type="range"] {
     flex: 1;
     min-width: 0;
+  }
+  .qual {
+    display: inline-flex;
+    gap: 2px;
   }
 </style>

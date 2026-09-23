@@ -9,32 +9,15 @@
   import { develop } from "../../photo.svelte";
   import { store } from "../../state.svelte";
   import Viewport from "../Viewport.svelte";
+  import { quality, QUALITIES, type Quality } from "../../quality.svelte";
 
   const index = $derived(lib.loupe ?? 0);
   const asset = $derived(lib.item(index));
   let src = $state<string | null>(null);
   let zoom = $state(1);
   const cache = new Map<number, string | null>();
-  // The fitted preview is 1024 px, so zooming in needs a bigger one.
-  let detail = $state(0);
-  let detailTimer: ReturnType<typeof setTimeout> | null = null;
-
-  /** Load a preview big enough for this zoom level, once the wheel settles. */
   function onZoom(z: number) {
     zoom = z;
-    const want = z <= 1.2 ? 0 : Math.min(4096, Math.ceil((1024 * z) / 1024) * 1024);
-    if (want <= detail || !asset) return;
-    if (detailTimer) clearTimeout(detailTimer);
-    detailTimer = setTimeout(async () => {
-      detailTimer = null;
-      const a = asset;
-      if (!a) return;
-      const p = await catalog.previewPx(a.id, want).catch(() => null);
-      if (p && lib.item(index)?.id === a.id) {
-        detail = want;
-        src = api.fileUrl(p);
-      }
-    }, 250);
   }
 
   async function load(id: number): Promise<string | null> {
@@ -52,16 +35,13 @@
       return;
     }
     src = null;
-    detail = 0;
-    full = false;
     fullFrame = null;
     if (a.renders) loadPrints(a.id);
     else ((prints = []), (shown = -1));
     if (a.kind === "video") loadClip(a.id);
     else clip = null;
-    load(a.id).then((p) => {
-      if (lib.item(index)?.id === a.id) src = p ? api.fileUrl(p) : null;
-    });
+    // At the chosen quality, so high or native carries from photo to photo.
+    applyQuality(a.id);
     for (const j of [index - 1, index + 1]) {
       const n = lib.item(j);
       if (n) load(n.id);
@@ -73,9 +53,8 @@
    * runs out before a deep zoom does. This decodes the file itself at its own
    * size — a second or so for a RAW, so it is on request.
    */
-  let fullBusy = $state(false);
-  let full = $state(false);
-  /** The clip or photo decoded at its own size, when asked for. */
+  let qualBusy = $state(false);
+  /** The photo decoded at its own size, for native quality. */
   let fullFrame = $state<FrameRef | null>(null);
 
   /**
@@ -117,10 +96,7 @@
     if (!a) return;
     if (i < 0) {
       shown = -1;
-      full = false;
-      src = null;
-      const p = await load(a.id);
-      if (lib.item(index)?.id === a.id) src = p ? api.fileUrl(p) : null;
+      await applyQuality(a.id);
       return;
     }
     const r = prints[i];
@@ -138,25 +114,37 @@
     const next = ((shown + 1 + d + n) % n) - 1;
     show(next);
   }
-  async function showFull() {
-    const a = asset;
-    if (!a || fullBusy) return;
-    fullBusy = true;
-    try {
-      const raw = await looksApi.rawGet(a.id);
-      const info = await looksApi.input(a.id);
-      const px = Math.max(info.width ?? 0, info.height ?? 0) || 16384;
-      // develop_preview hands back a data URL, not a path: use it as it comes.
-      const f = await looksApi.developFrame(a.id, raw, px);
-      if (lib.item(index)?.id === a.id) {
-        fullFrame = f;
-        full = true;
+  /**
+   * Show the photo at the chosen quality. Low is the catalog's 1024 px preview,
+   * high a 4096 px one made from the same source, native a decode of the file
+   * itself — a second or so for a RAW, which is why it is a choice.
+   */
+  async function applyQuality(id: number) {
+    const q = quality.value;
+    fullFrame = null;
+    src = null;
+    if (q === "native") {
+      qualBusy = true;
+      try {
+        const raw = await looksApi.rawGet(id);
+        const info = await looksApi.input(id);
+        const px = Math.max(info.width ?? 0, info.height ?? 0) || 16384;
+        const f = await looksApi.developFrame(id, raw, px);
+        if (lib.item(index)?.id === id && quality.value === "native") fullFrame = f;
+      } catch (e) {
+        lib.error = String(e);
+      } finally {
+        qualBusy = false;
       }
-    } catch (e) {
-      lib.error = String(e);
-    } finally {
-      fullBusy = false;
+      return;
     }
+    const p = q === "high" ? await catalog.previewPx(id, 4096).catch(() => null) : await load(id);
+    if (lib.item(index)?.id === id && quality.value === q) src = p ? api.fileUrl(p) : null;
+  }
+
+  function setQuality(q: Quality) {
+    quality.set(q);
+    if (asset && shown === -1) applyQuality(asset.id);
   }
 
   function go(delta: number) {
@@ -223,9 +211,12 @@
       case "e":
         if (asset) lib.askExport([asset.id]);
         break;
-      case "f":
-        showFull();
+      case "f": {
+        // F cycles the quality: low → high → native → low.
+        const order: Quality[] = ["low", "high", "native"];
+        setQuality(order[(order.indexOf(quality.value) + 1) % order.length]);
         break;
+      }
       case "[":
         e.preventDefault();
         cycle(-1);
@@ -285,9 +276,12 @@
         <button onclick={() => (rendering = true)} title="Render this clip through a look">Render…</button>
       {/if}
       <button onclick={() => asset && lib.askExport([asset.id])} title="Export this photo (E)">Export…</button>
-      <button class:on={full} disabled={fullBusy} onclick={showFull} title="Decode the file at its own resolution (F)">
-        {fullBusy ? "decoding…" : full ? "full res" : "Full res"}
-      </button>
+      <span class="qual" role="group" aria-label="Quality (F cycles)">
+        {#each QUALITIES as q (q.id)}
+          <button class:on={quality.value === q.id} disabled={qualBusy} onclick={() => setQuality(q.id)} title="{q.hint} (F cycles)">{q.label}</button>
+        {/each}
+        {#if qualBusy}<span class="muted small">decoding…</span>{/if}
+      </span>
     </div>
   </div>
   <div
@@ -389,5 +383,10 @@
   }
   .small {
     font-size: 11.5px;
+  }
+  .qual {
+    display: inline-flex;
+    gap: 2px;
+    align-items: center;
   }
 </style>

@@ -3,6 +3,7 @@
 // this, so both stages read the same settings.
 
 import { looks as backend, defaultRaw, type FrameRef, type InputInfo, type RawSettings } from "./api";
+import { quality, type Quality } from "./quality.svelte";
 
 /** Preview size when the photo is fitted to the stage. */
 export const BASE_PX = 1600;
@@ -37,8 +38,6 @@ class DevelopStage {
    * the backend's 4096; the engine never renders past the photo's own size.
    */
   detail = $state(BASE_PX);
-  /** Render every pixel the photo has, however far out the view is zoomed. */
-  full = $state(false);
   /**
    * While the crop tool is open the preview shows the whole frame, so the
    * rectangle has something to be drawn on. The crop itself is still saved.
@@ -75,31 +74,18 @@ class DevelopStage {
     return Math.max(this.input?.width ?? 0, this.input?.height ?? 0);
   }
 
-  /** Switch full resolution on or off; `then` re-renders the stage in view. */
-  setFull(on: boolean, then: () => void) {
-    this.full = on;
-    this.detail = on ? (this.native > 0 ? Math.min(this.native, 16384) : 16384) : BASE_PX;
+  /** Choose low / high / native; `then` re-renders the stage in view. Remembered across views. */
+  setQuality(q: Quality, then: () => void) {
+    quality.set(q);
+    this.detail = quality.px(this.native);
     then();
   }
 
   /**
-   * Told by a viewer how far it is zoomed in. `then` is the stage that should
-   * re-render, so zooming in Print does not also render the develop preview.
-   * Waits for the wheel to settle: a render costs far more than a scroll.
+   * Zoom no longer changes the render size: the quality setting does, so what
+   * you see is what you chose. Kept so the viewers' wiring stays simple.
    */
-  setZoom(z: number, then: () => void) {
-    if (this.full) return;
-    const want = detailFor(z, this.native);
-    // Only ever more. Dropping back on zoom-out would throw away a render you
-    // waited for, and re-fetch it the moment you zoomed in again.
-    if (want <= this.detail) return;
-    if (this.zoomTimer) clearTimeout(this.zoomTimer);
-    this.zoomTimer = setTimeout(() => {
-      this.zoomTimer = null;
-      this.detail = want;
-      then();
-    }, 250);
-  }
+  setZoom(_z: number, _then: () => void) {}
 
   get isRaw(): boolean {
     return this.input?.is_raw ?? true;
@@ -117,7 +103,7 @@ class DevelopStage {
     this.error = null;
     this.input = id === null ? null : await backend.input(id).catch(() => null);
     this.frameAt = null;
-    this.detail = this.full ? (this.native > 0 ? Math.min(this.native, 16384) : 16384) : BASE_PX;
+    this.detail = quality.px(this.native);
     this.raw = id === null ? defaultRaw() : await backend.rawGet(id).catch(() => defaultRaw());
     this.version++;
     this.refresh();
