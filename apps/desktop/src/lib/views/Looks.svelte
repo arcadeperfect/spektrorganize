@@ -19,6 +19,20 @@
   let paramsError = $state<string | null>(null);
 
   let zoom = $state(1);
+  let printImg = $state<HTMLImageElement | undefined>();
+  /** The picture's pixel size and its fitted width, for 1:1 and for showing pixels past it. */
+  let printNat = $state<[number, number] | null>(null);
+  let printFitW = $state(0);
+  function measurePrint() {
+    const i = printImg;
+    if (!i || !i.naturalWidth) return;
+    printNat = [i.naturalWidth, i.naturalHeight];
+    printFitW = i.clientWidth;
+  }
+  const printPx = $derived(printNat && printFitW ? (printFitW / printNat[0]) * zoom * (window.devicePixelRatio || 1) : 0);
+  function printOnePixel(): number | null {
+    return printNat && printFitW ? printNat[0] / (printFitW * (window.devicePixelRatio || 1)) : null;
+  }
 
   const candidates = $derived.by(() => {
     const ids = lib.selected.size ? [...lib.selected] : lib.focus !== null ? [lib.focus] : [];
@@ -171,6 +185,7 @@
           zoom = z;
           L.setZoom(z);
         },
+        pixel: printOnePixel,
       }} role="img" aria-label="Preview">
       <div class="view">
       {#if D.id === null}
@@ -179,7 +194,7 @@
         <img src={L.before} alt="Before" />
         <div class="tag">Before</div>
       {:else if L.preview}
-        <img src={L.preview} alt="Preview" />
+        <img src={L.preview} alt="Preview" bind:this={printImg} onload={measurePrint} class:pixelated={printPx > 1} />
         {#if L.showBefore}<div class="tag">After (loading before…)</div>{/if}
         {#if L.error}<div class="bad err">{L.error}</div>{/if}
       {:else if L.error}
@@ -190,7 +205,7 @@
       {#if L.busy}<div class="muted busy">{L.busy}</div>{/if}
       </div>
       <div class="tag zoom right">
-        {#if zoom !== 1}<span>{Math.round(zoom * 100)}%</span>{/if}
+        {#if zoom !== 1}<span title="Of the picture's own pixels; 100% is one per screen pixel">{Math.round((printPx || zoom) * 100)}%</span>{/if}
         <button class="full" class:on={D.full} onclick={() => L.setFull(!D.full)} title="Render every pixel ({D.native ? `${D.native} px` : 'full size'}) instead of a fitted preview — slower">
           {D.full ? "full res" : `${D.detail} px`}
         </button>
@@ -526,5 +541,8 @@
   .picker input[type="range"] {
     flex: 1;
     min-width: 0;
+  }
+  .stage img.pixelated {
+    image-rendering: pixelated;
   }
 </style>

@@ -276,7 +276,22 @@ impl RawFile {
             let d = self.data_mut();
             d.rawparams.use_rawspeed = 0;
             d.rawparams.max_raw_memory_mb = 4096;
+            // A body newer than LibRaw's camera table decodes with the sensor's masked border
+            // still on: a black band down the right and along the bottom. The file itself
+            // records where the picture is (Sony writes it, DNG requires it); when that is
+            // smaller than the frame LibRaw would hand back, crop to it. Coordinates come
+            // relative to the raw frame, so the margins LibRaw already trims are taken off.
+            let inset = {
+                let sz = &d.sizes;
+                let c = sz.raw_inset_crops[0];
+                let (cw, ch) = (c.cwidth as u32, c.cheight as u32);
+                let (w, h) = (sz.width as u32, sz.height as u32);
+                let left = (c.cleft as u32).saturating_sub(sz.left_margin as u32);
+                let top = (c.ctop as u32).saturating_sub(sz.top_margin as u32);
+                (cw > 0 && ch > 0 && (cw < w || ch < h) && left + cw <= w && top + ch <= h).then_some([left, top, cw, ch])
+            };
             let p = &mut d.params;
+            p.cropbox = inset.unwrap_or([0, 0, 0, 0]);
             p.use_camera_wb = if s.raw.white_balance == WhiteBalance::AsShot { 1 } else { 0 };
             p.use_auto_wb = 0;
             p.use_camera_matrix = 1;

@@ -182,8 +182,12 @@ impl PreviewEngine {
             ..raw.clone()
         };
         let mut settings = DevelopSettings::with_raw(&lib_only);
-        settings.half_size = true;
-        let img = RawFile::open(raw_path)?.develop(&settings)?;
+        let mut file = RawFile::open(raw_path)?;
+        // A half-size decode is four times quicker and all a fitted preview can use — but
+        // "full resolution" has to mean the sensor's pixels, not half of them magnified.
+        let long = file.width().max(file.height());
+        settings.half_size = max_px != 0 && max_px * 2 <= long;
+        let img = file.develop(&settings)?;
         let img = downscale(img, max_px);
         self.decodes.push((key, img.clone()));
         if self.decodes.len() > 4 {

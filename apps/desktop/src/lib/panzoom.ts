@@ -17,6 +17,9 @@ export interface PanZoomOptions {
   /** Whether the keys work anywhere ("always", for a full-screen view) or
    * only while the pointer is over this view ("hover"). */
   keys?: "always" | "hover";
+  /** The zoom at which one picture pixel is one screen pixel, when the view
+   * knows its picture's size. Without it, 1:1 falls back to "fit". */
+  pixel?: () => number | null;
 }
 
 const MIN = 0.05;
@@ -151,8 +154,8 @@ export function panzoom(node: HTMLElement, options: PanZoomOptions = {}) {
         fit();
         break;
       case "Numpad1":
-        // 1:1 — the preview is rendered at screen scale, so this is fit × 1.
-        zoom = 1;
+        // 1:1 — one picture pixel per screen pixel, as in Blender; fit when unknown.
+        zoom = Math.min(MAX, Math.max(MIN, opts.pixel?.() ?? 1));
         x = 0;
         y = 0;
         apply();

@@ -82,6 +82,14 @@
    */
   let fitted = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 
+  /** Screen pixels per picture pixel right now: 1 is true 1:1. */
+  const pxRatio = $derived(fitted && decoded ? (fitted.w / decoded[0]) * zoom * (window.devicePixelRatio || 1) : 0);
+
+  /** The zoom that puts one picture pixel on one screen pixel. */
+  function onePixel(): number | null {
+    return fitted && decoded ? decoded[0] / (fitted.w * (window.devicePixelRatio || 1)) : null;
+  }
+
   function measureFit() {
     const img = imgEl;
     const box = frameEl;
@@ -182,13 +190,15 @@
           zoom = z;
           D.setZoom(z, () => D.refresh());
         },
+        pixel: onePixel,
       }} role="img" aria-label="Preview">
       <div class="view">
       {#if D.id === null}
         <div class="muted empty">Select photos in the Library; the first one opens here.</div>
       {:else if D.preview}
         <div class="frame" bind:this={frameEl}>
-          <img src={D.preview} alt="Developed" bind:this={imgEl} onload={measureFit} />
+          <!-- Past 1:1 the picture's pixels are shown as they are, not blended into each other. -->
+          <img src={D.preview} alt="Developed" bind:this={imgEl} onload={measureFit} class:pixelated={pxRatio > 1} />
           {#if cropping && fitted}
             <div class="over" style="left: {fitted.x}px; top: {fitted.y}px; width: {fitted.w}px; height: {fitted.h}px">
               <CropOverlay crop={D.raw.crop} aspect={holdAspect} {zoom} onchange={setCrop} />
@@ -202,7 +212,7 @@
       {/if}
       </div>
       <div class="tag zoom right">
-        {#if zoom !== 1}<span>{Math.round(zoom * 100)}%</span>{/if}
+        {#if zoom !== 1}<span title="Of the picture's own pixels; 100% is one per screen pixel">{Math.round((pxRatio || zoom) * 100)}%</span>{/if}
         {#if decoded}
           <span class="mono dims" title="Decoded pixels · the file's own size">
             {decoded[0]}×{decoded[1]}{#if D.input?.width && D.input?.height}<span class="muted"> of {D.input.width}×{D.input.height}</span>{/if}
@@ -493,6 +503,9 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+  .frame img.pixelated {
+    image-rendering: pixelated;
   }
   .over {
     position: absolute;
