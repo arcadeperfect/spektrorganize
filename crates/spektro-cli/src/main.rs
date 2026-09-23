@@ -128,6 +128,25 @@ enum Cmd {
         #[command(subcommand)]
         cmd: CatalogCmd,
     },
+    /// Looks (presets): import from other spektrafilm flavours, list what is installed.
+    Look {
+        #[command(subcommand)]
+        cmd: LookCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum LookCmd {
+    /// Import presets — Python GUI state, darktable, vkdt, or zips of them — into the user
+    /// preset folder. Each is resolved against the film data first, so a broken one is refused.
+    Import {
+        files: Vec<PathBuf>,
+        /// Overwrite a preset of the same name.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Every preset the app can see, with where it came from.
+    List,
 }
 
 #[derive(Subcommand)]
@@ -436,6 +455,7 @@ fn main() -> anyhow::Result<()> {
             println!("wrote {}", path.display());
         }
         Cmd::Catalog { cmd } => catalog_cmd(&cli, cmd)?,
+        Cmd::Look { cmd } => look_cmd(&cli, cmd)?,
         Cmd::Profiles => {
             let cfg = load_config(&cli)?;
             let dir = spektro_core::film::find_data_dir(cfg.data_dir.as_deref())?;
@@ -668,4 +688,52 @@ fn catalog_cmd(cli: &Cli, cmd: &CatalogCmd) -> anyhow::Result<()> {
 
 fn chrono_now() -> chrono::NaiveDateTime {
     chrono::Local::now().naive_local()
+}
+
+fn look_cmd(cli: &Cli, cmd: &LookCmd) -> anyhow::Result<()> {
+    use spektro_core::film::{Preset, preset_file_name, user_preset_dir};
+    match cmd {
+        LookCmd::List => {
+            for p in spektro_core::film::list_presets() {
+                println!("{:<28} {:<24} {:<26} {}", p.name, p.film, p.print, p.path.display());
+            }
+        }
+        LookCmd::Import { files, force } => {
+            let force = *force;
+            let cfg = load_config(cli)?;
+            let data_dir = spektro_core::film::find_data_dir(cfg.data_dir.as_deref())?;
+            let dir = user_preset_dir();
+            let (mut done, mut skipped, mut failed) = (0, 0, 0);
+            for file in files {
+                let (preset, warnings) = match Preset::import(&file, Some(&data_dir)) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        failed += 1;
+                        println!("✗ {}: {e:#}", file.display());
+                        continue;
+                    }
+                };
+                // Refuse what the pipeline itself would refuse.
+                if let Err(e) = preset.resolve(&data_dir) {
+                    failed += 1;
+                    println!("✗ {}: imports but does not resolve: {e:#}", file.display());
+                    continue;
+                }
+                let out = dir.join(preset_file_name(&preset.name));
+                if out.exists() && !force {
+                    skipped += 1;
+                    println!("– {}: already installed as {} (--force to replace)", preset.name, out.file_name().unwrap().to_string_lossy());
+                    continue;
+                }
+                preset.save(&out)?;
+                done += 1;
+                println!("✓ {:<28} {} on {}  → {}", preset.name, preset.film, preset.print, out.file_name().unwrap().to_string_lossy());
+                for w in warnings {
+                    println!("    note: {w}");
+                }
+            }
+            println!("{done} installed, {skipped} skipped, {failed} failed → {}", dir.display());
+        }
+    }
+    Ok(())
 }
