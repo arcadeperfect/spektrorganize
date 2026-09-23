@@ -11,6 +11,7 @@
   let catInfo = $state<CatalogInfo | null>(null);
   let fromPrints = $state(false);
   let hevcThumbs = $state(true);
+  let remakeNote = $state<string | null>(null);
   let hasKey = $state(false);
   let keyInput = $state("");
   let keyMsg = $state<string | null>(null);
@@ -179,6 +180,19 @@
         <div class="mono small">database: {catInfo.path} (schema v{catInfo.schema})</div>
         <div class="mono small">thumbnails: {catInfo.thumbs_dir}</div>
         <div class="small">{catInfo.assets} photos indexed</div>
+        <div class="row">
+          <button
+            class="mini"
+            onclick={async () => {
+              const n = await catalog.remakeRotatedThumbs().catch(() => 0);
+              remakeNote = `${n} previews of RAWs shot on their side will be remade as the grid shows them.`;
+            }}
+            title="Some bodies write the embedded preview without saying which way up it was shot; previews made before that was accounted for are sideways"
+          >
+            Remake previews of rotated RAWs
+          </button>
+          {#if remakeNote}<span class="muted small">{remakeNote}</span>{/if}
+        </div>
         <label class="row small">
           <input
             type="checkbox"

@@ -482,6 +482,15 @@ impl Catalog {
             .execute("DELETE FROM thumbnails WHERE asset_id IN (SELECT DISTINCT asset_id FROM renders WHERE kind = 'jpeg')", [])?)
     }
 
+    /// Forget the thumbnails of RAWs shot on their side, so they are made again — for after a
+    /// fix to how the embedded preview is oriented. Returns how many photos are affected.
+    pub fn forget_rotated_raw_thumbnails(&self) -> anyhow::Result<usize> {
+        Ok(self.conn.execute(
+            "DELETE FROM thumbnails WHERE asset_id IN (SELECT id FROM assets WHERE kind = 'raw' AND orientation IN (2, 3, 4, 5, 6, 7, 8))",
+            [],
+        )?)
+    }
+
     /// A photo's pixel size, when the indexer could read it.
     pub fn dimensions(&self, id: i64) -> anyhow::Result<(Option<i64>, Option<i64>)> {
         Ok(self.conn.query_row("SELECT width, height FROM assets WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))?)

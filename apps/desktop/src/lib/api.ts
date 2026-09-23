@@ -430,6 +430,7 @@ export const catalog = {
   saveCollection: (name: string, filter: Filter, sort: SortKey | null) =>
     invoke<number>("catalog_save_collection", { name, filter, sort }),
   deleteCollection: (id: number) => invoke<void>("catalog_delete_collection", { id }),
+  remakeRotatedThumbs: () => invoke<number>("catalog_remake_rotated_thumbs"),
   thumbsFromPrints: () => invoke<boolean>("catalog_thumbs_from_prints"),
   getSetting: (key: string) => invoke<string | null>("catalog_get_setting", { key }),
   setSetting: (key: string, on: boolean) => invoke<void>("catalog_set_setting", { key, value: on ? "1" : "0" }),

@@ -75,8 +75,16 @@ pub fn make_thumbnails(src: &Path, source: PreviewSource, outs: &[(u32, &Path)])
         }
         PreviewSource::EmbeddedPreview => {
             let mut raw = RawFile::open(src)?;
+            // Some bodies (Sony among them) write the embedded preview without an orientation
+            // tag of its own; the RAW knows which way up it was shot, so ask it when the JPEG
+            // does not say.
+            let raw_orientation = raw.meta().orientation.unwrap_or(1) as u16;
             match raw.largest_jpeg_preview()? {
-                Some(b) => decode_jpeg_oriented(&b)?,
+                Some(b) => {
+                    let tagged = exif_orientation(&b);
+                    let img = image::load_from_memory_with_format(&b, image::ImageFormat::Jpeg)?;
+                    orient(img, tagged.filter(|o| *o != 1).unwrap_or(raw_orientation))
+                }
                 None => return Ok(None),
             }
         }

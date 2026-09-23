@@ -635,6 +635,7 @@ pub fn run() {
             catalog::catalog_delete_collection,
             catalog::catalog_get_setting,
             catalog::catalog_set_setting,
+            catalog::catalog_remake_rotated_thumbs,
             catalog::catalog_thumbs_from_prints,
             catalog::catalog_set_thumbs_from_prints,
             catalog::catalog_thumb_data,

@@ -484,6 +484,15 @@ pub fn catalog_set_setting(app: AppHandle, st: State<CatalogState>, key: String,
     Ok(())
 }
 
+/// Remake the previews of RAWs shot on their side; they are queued as the grid asks for them.
+#[tauri::command]
+pub fn catalog_remake_rotated_thumbs(app: AppHandle, st: State<CatalogState>) -> Result<usize> {
+    let n = st.db.lock().unwrap().forget_rotated_raw_thumbnails().map_err(err)?;
+    st.queue_missing_thumbs();
+    let _ = app.emit("catalog-changed", ());
+    Ok(n)
+}
+
 /// Whether library thumbnails come from the newest print instead of the camera rendition.
 #[tauri::command]
 pub fn catalog_thumbs_from_prints(st: State<CatalogState>) -> Result<bool> {
