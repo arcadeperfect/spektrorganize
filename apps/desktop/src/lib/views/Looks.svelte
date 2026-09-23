@@ -123,12 +123,30 @@
     return getPath(L.effective, "scanner.unsharp_mask") ?? [0.7, 0.7];
   }
 
-  /** ← and → walk the library's current listing; a field or slider with focus keeps them. */
+  /**
+   * ← and → walk the library's current listing; ↑ and ↓ walk the presets, so
+   * a photo can be tried against every look without touching the mouse. A
+   * field, slider or menu with focus keeps the keys for itself.
+   */
   async function stepKey(e: KeyboardEvent) {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const horizontal = e.key === "ArrowLeft" || e.key === "ArrowRight";
+    const vertical = e.key === "ArrowUp" || e.key === "ArrowDown";
+    if (!horizontal && !vertical) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
-    if (e.metaKey || e.ctrlKey || e.altKey || D.id === null) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (vertical) {
+      const list = L.list;
+      if (!list.length) return;
+      e.preventDefault();
+      const i = list.findIndex((p) => p.path === L.path);
+      // From no preset, ↓ starts at the top and ↑ at the bottom; otherwise no wrapping.
+      const to = i < 0 ? (e.key === "ArrowDown" ? 0 : list.length - 1) : i + (e.key === "ArrowDown" ? 1 : -1);
+      if (to < 0 || to >= list.length) return;
+      await L.open(list[to].path);
+      return;
+    }
+    if (D.id === null) return;
     e.preventDefault();
     const next = await lib.step(D.id, e.key === "ArrowRight" ? 1 : -1);
     if (next) await D.setPhoto(next.id);
