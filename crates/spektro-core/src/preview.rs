@@ -18,17 +18,7 @@ use std::time::{Duration, Instant};
 pub fn thumbnail(scan: &Scan, group: &Group, cache_dir: &Path, max_px: u32) -> anyhow::Result<Option<PathBuf>> {
     let Some(fid) = group.preview_file else { return Ok(None) };
     let file = scan.file(fid);
-    let key = {
-        let mut h = blake3::Hasher::new();
-        h.update(file.path.to_string_lossy().as_bytes());
-        h.update(&file.size.to_le_bytes());
-        if let Some(t) = file.mtime.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()) {
-            h.update(&t.as_secs().to_le_bytes());
-        }
-        h.update(&max_px.to_le_bytes());
-        h.finalize().to_hex()[..24].to_string()
-    };
-    let out = cache_dir.join("thumbs").join(format!("{key}.jpg"));
+    let out = thumb_path(file, cache_dir, max_px);
     if out.exists() {
         return Ok(Some(out));
     }
@@ -36,6 +26,31 @@ pub fn thumbnail(scan: &Scan, group: &Group, cache_dir: &Path, max_px: u32) -> a
         Some(_) => Ok(Some(out)),
         None => Ok(None),
     }
+}
+
+/// Make every size of a group's thumbnail that is not cached yet, from one read of the file.
+/// Returns whether anything had to be made.
+pub fn warm_thumbnails(scan: &Scan, group: &Group, cache_dir: &Path, sizes: &[u32]) -> anyhow::Result<bool> {
+    let Some(fid) = group.preview_file else { return Ok(false) };
+    let file = scan.file(fid);
+    let paths: Vec<(u32, PathBuf)> = sizes.iter().map(|px| (*px, thumb_path(file, cache_dir, *px))).filter(|(_, p)| !p.exists()).collect();
+    if paths.is_empty() {
+        return Ok(false);
+    }
+    let outs: Vec<(u32, &Path)> = paths.iter().map(|(px, p)| (*px, p.as_path())).collect();
+    make_thumbnails(&file.path, group.preview, &outs)?;
+    Ok(true)
+}
+
+fn thumb_path(file: &crate::scan::ScannedFile, cache_dir: &Path, max_px: u32) -> PathBuf {
+    let mut h = blake3::Hasher::new();
+    h.update(file.path.to_string_lossy().as_bytes());
+    h.update(&file.size.to_le_bytes());
+    if let Some(t) = file.mtime.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()) {
+        h.update(&t.as_secs().to_le_bytes());
+    }
+    h.update(&max_px.to_le_bytes());
+    cache_dir.join("thumbs").join(format!("{}.jpg", &h.finalize().to_hex()[..24]))
 }
 
 /// Write one JPEG per `(max_px, path)` from a single decode of `src`. Sizes may come in any

@@ -24,21 +24,70 @@
   const cur = $derived<GroupView | undefined>(shots[Math.min(current, shots.length - 1)]);
   const markedBytes = $derived(all.filter((g) => marked.has(g.id)).reduce((n, g) => n + g.bytes, 0));
 
-  // The large picture for whichever shot is under the cursor.
+  // The large picture for whichever shot is under the cursor. The old one stays up until
+  // the new one is ready, so flicking through does not flash.
   $effect(() => {
     const g = cur;
-    big = null;
-    if (!g || g.kind === "video") return;
+    if (!g || g.kind === "video") {
+      big = null;
+      return;
+    }
     let stale = false;
     api
       .thumbnail(g.id, 2048)
       .then((p) => {
         if (!stale) big = p ? api.fileUrl(p) : null;
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!stale) big = null;
+      });
     return () => {
       stale = true;
     };
+  });
+
+  /** Proxies being built ahead of time, if asked for. */
+  let proxies = $state<{ done: number; total: number } | null>(null);
+  let proxied = $state(false);
+
+  $effect(() => {
+    const off = api.on<{ done: number; total: number; finished: boolean }>("cull-proxies", (p) => {
+      if (!proxies) return;
+      proxies = p.finished ? null : { done: p.done, total: p.total };
+      if (p.finished) proxied = true;
+    });
+    return () => {
+      off.then((f) => f());
+      api.cullProxiesCancel();
+    };
+  });
+
+  async function makeProxies() {
+    const ids = all.filter((g) => g.kind !== "video").map((g) => g.id);
+    if (!ids.length) return;
+    proxies = { done: 0, total: ids.length };
+    await api.cullProxies(ids).catch((e) => {
+      proxies = null;
+      error = String(e);
+    });
+  }
+  function stopProxies() {
+    api.cullProxiesCancel();
+    proxies = null;
+  }
+
+  // Once proxies exist, have the browser hold the next few decoded, so a key press is instant.
+  $effect(() => {
+    if (!proxied) return;
+    for (const g of shots.slice(current + 1, current + 4).concat(shots.slice(Math.max(0, current - 1), current))) {
+      if (g.kind === "video") continue;
+      api
+        .thumbnail(g.id, 2048)
+        .then((p) => {
+          if (p) new Image().src = api.fileUrl(p);
+        })
+        .catch(() => {});
+    }
   });
 
   /** The last tile marked by a click, so shift-click can repeat it over a range. */
@@ -160,6 +209,11 @@
       <div class="row">
         <span class="muted small">←/→ move · X mark · U unmark · shift-click a range</span>
         <input type="range" min="90" max="240" step="10" bind:value={size} title="Thumbnail size" />
+        {#if proxies}
+          <button class="mini" onclick={stopProxies} title="Stop building proxies">proxies {proxies.done}/{proxies.total} ✕</button>
+        {:else}
+          <button class="mini" onclick={makeProxies} title="Build every preview now, so flicking through is instant">{proxied ? "proxies ready" : "make proxies"}</button>
+        {/if}
         <button class="mini" disabled={!marked.size} onclick={() => (marked = new Set())}>clear marks</button>
         {#if reviewing}
           <button onclick={stopReview}>← Back to all</button>

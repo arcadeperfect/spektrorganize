@@ -31,6 +31,8 @@ pub struct AppState {
     plan: Mutex<Option<Arc<Plan>>>,
     cancel: Mutex<Option<Cancel>>,
     busy: AtomicBool,
+    /// Bumped to stop a proxy run; each run only continues while it still holds the number.
+    proxy_run: Arc<std::sync::atomic::AtomicU64>,
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -302,6 +304,41 @@ async fn thumbnail(state: State<'_, AppState>, group: u32, px: Option<u32>) -> R
     })
     .await
     .map_err(err)?
+}
+
+/// Build the small and large previews of every shot ahead of time, so flicking through the
+/// rejecticator never waits on the card. Progress arrives as `cull-proxies` events.
+#[tauri::command]
+fn cull_proxies(app: AppHandle, state: State<AppState>, ids: Vec<u32>) -> Result<()> {
+    let scan = state.scan.lock().unwrap().clone().ok_or("no scan")?;
+    let cache = state.cache_dir.clone();
+    let run = state.proxy_run.clone();
+    let mine = run.fetch_add(1, Ordering::SeqCst) + 1;
+    let total = ids.len();
+    let ids = Arc::new(ids);
+    let next = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let done = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    // A card reads one file at a time well and many badly; a few workers keep the decoder busy.
+    for _ in 0..4 {
+        let (app, scan, cache, run, ids, next, done) = (app.clone(), scan.clone(), cache.clone(), run.clone(), ids.clone(), next.clone(), done.clone());
+        std::thread::spawn(move || loop {
+            let i = next.fetch_add(1, Ordering::SeqCst);
+            if i >= total || run.load(Ordering::SeqCst) != mine {
+                break;
+            }
+            if let Some(g) = scan.groups.get(ids[i] as usize) {
+                let _ = spektro_core::preview::warm_thumbnails(&scan, g, &cache, &[512, 2048]);
+            }
+            let d = done.fetch_add(1, Ordering::SeqCst) + 1;
+            let _ = app.emit("cull-proxies", serde_json::json!({ "done": d, "total": total, "finished": d == total }));
+        });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn cull_proxies_cancel(state: State<AppState>) {
+    state.proxy_run.fetch_add(1, Ordering::SeqCst);
 }
 
 /// One file on the card, as listed before the rejecticator deletes anything.
@@ -659,6 +696,7 @@ pub fn run() {
                 scan: Mutex::new(None),
                 excluded: Mutex::new(HashSet::new()),
                 deleted: Mutex::new(HashSet::new()),
+                proxy_run: Default::default(),
                 dupes: Mutex::new(ImportDupes::default()),
                 description: Mutex::new(None),
                 plan: Mutex::new(None),
@@ -686,6 +724,8 @@ pub fn run() {
             set_excluded,
             thumbnail,
             cull_files,
+            cull_proxies,
+            cull_proxies_cancel,
             cull_delete,
             make_plan,
             start_import,
