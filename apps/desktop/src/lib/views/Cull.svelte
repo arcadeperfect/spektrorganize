@@ -17,9 +17,12 @@
   let error = $state<string | null>(null);
   let grid = $state<HTMLDivElement | null>(null);
 
-  const shots = $derived(store.scan?.groups.filter((g) => g.kind === "raw" || g.kind === "image" || g.kind === "video") ?? []);
+  const all = $derived(store.scan?.groups.filter((g) => g.kind === "raw" || g.kind === "image" || g.kind === "video") ?? []);
+  /** The last look: only what was marked when it began, so sparing one does not shuffle the rest. */
+  let reviewing = $state<Set<number> | null>(null);
+  const shots = $derived(reviewing ? all.filter((g) => reviewing!.has(g.id)) : all);
   const cur = $derived<GroupView | undefined>(shots[Math.min(current, shots.length - 1)]);
-  const markedBytes = $derived(shots.filter((g) => marked.has(g.id)).reduce((n, g) => n + g.bytes, 0));
+  const markedBytes = $derived(all.filter((g) => marked.has(g.id)).reduce((n, g) => n + g.bytes, 0));
 
   // The large picture for whichever shot is under the cursor.
   $effect(() => {
@@ -82,6 +85,17 @@
     e.preventDefault();
   }
 
+  function startReview() {
+    reviewing = new Set(marked);
+    anchor = null;
+    current = 0;
+  }
+  function stopReview() {
+    reviewing = null;
+    anchor = null;
+    current = 0;
+  }
+
   async function review() {
     busy = true;
     error = null;
@@ -103,6 +117,7 @@
       const gone = new Set(r.groups);
       marked = new Set([...marked].filter((id) => !gone.has(id)));
       pending = null;
+      reviewing = null;
       anchor = null;
       await store.reloadScan();
       go(current);
@@ -136,9 +151,9 @@
 
     <div class="bar row spread">
       <div class="row">
-        <h2>Rejecticator</h2>
+        <h2>Rejecticator{reviewing ? " — last look" : ""}</h2>
         <span class="muted small">
-          {store.scan.source.label} · {shots.length} shots ·
+          {store.scan.source.label} · {all.length} shots ·
           <span class:bad={marked.size > 0}>{marked.size} marked{marked.size ? ` · ${human(markedBytes)}` : ""}</span>
         </span>
       </div>
@@ -146,11 +161,18 @@
         <span class="muted small">←/→ move · X mark · U unmark · shift-click a range</span>
         <input type="range" min="90" max="240" step="10" bind:value={size} title="Thumbnail size" />
         <button class="mini" disabled={!marked.size} onclick={() => (marked = new Set())}>clear marks</button>
-        <button class="danger" disabled={busy || !marked.size} onclick={review}>Delete {marked.size}…</button>
+        {#if reviewing}
+          <button onclick={stopReview}>← Back to all</button>
+          <button class="danger" disabled={busy || !marked.size} onclick={review}>Delete {marked.size}…</button>
+        {:else}
+          <button class="primary" disabled={!marked.size} onclick={startReview}>Review {marked.size}…</button>
+        {/if}
       </div>
     </div>
 
-    {#if note}<p class="small msg">{note}</p>{/if}
+    {#if reviewing}
+      <p class="small msg muted">Only the shots you marked. Unmark any you want to keep, then Delete shows every file path before anything goes.</p>
+    {:else if note}<p class="small msg">{note}</p>{/if}
     {#if error}<p class="bad small msg pre">{error}</p>{/if}
 
     <div class="panes">
