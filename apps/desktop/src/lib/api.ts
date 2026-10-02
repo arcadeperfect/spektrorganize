@@ -289,6 +289,21 @@ export interface DoomedFile {
   present: boolean;
 }
 
+/** One file on the card, listed before the rejecticator deletes it. */
+export interface CullFile {
+  group: number;
+  path: string;
+  size: number;
+  present: boolean;
+}
+
+export interface CullReport {
+  removed: number;
+  bytes: number;
+  failed: [string, string][];
+  groups: number[];
+}
+
 export interface PurgeReport {
   removed: number;
   bytes: number;
@@ -475,7 +490,9 @@ export const api = {
   startScan: (path: string) => invoke<void>("start_scan", { path }),
   getScan: () => invoke<ScanView | null>("get_scan"),
   setExcluded: (ids: number[], excluded: boolean) => invoke<void>("set_excluded", { ids, excluded }),
-  thumbnail: (group: number) => invoke<string | null>("thumbnail", { group }),
+  thumbnail: (group: number, px?: number) => invoke<string | null>("thumbnail", { group, px }),
+  cullFiles: (ids: number[]) => invoke<CullFile[]>("cull_files", { ids }),
+  cullDelete: (ids: number[]) => invoke<CullReport>("cull_delete", { ids }),
   makePlan: () => invoke<PlanView>("make_plan"),
   startImport: (render: boolean) => invoke<void>("start_import", { render }),
   startRenderManifest: (req: {

@@ -38,7 +38,10 @@
           <div>{s.label}</div>
           <div class="muted mono">{s.root}</div>
         </div>
-        <button class="primary" disabled={store.busy} onclick={() => store.startScan(s.root)}>Scan</button>
+        <div class="row">
+          <button disabled={store.busy} onclick={() => store.startScan(s.root, "cull")} title="Go through the card and delete failed shots from it, without importing">Rejecticate</button>
+          <button class="primary" disabled={store.busy} onclick={() => store.startScan(s.root)}>Scan</button>
+        </div>
       </div>
     {/each}
     <div class="row">
@@ -56,6 +59,7 @@
     </div>
     <div class="row">
       <button class="primary" disabled={!custom || store.busy} onclick={() => custom && store.startScan(custom)}>Scan folder</button>
+      <button disabled={!custom || store.busy} onclick={() => custom && store.startScan(custom, "cull")}>Rejecticate</button>
     </div>
   </div>
 </div>
@@ -72,7 +76,10 @@
   <div class="card" style="margin-top: 14px">
     <div class="row spread">
       <span>Last scan: <b>{store.scan.source.label}</b> · {store.scan.groups.length} items · {human(store.scan.bytes)}</span>
-      <button onclick={() => (store.view = "review")}>Review →</button>
+      <div class="row">
+        <button onclick={() => (store.view = "cull")}>Rejecticate</button>
+        <button onclick={() => (store.view = "review")}>Review →</button>
+      </div>
     </div>
   </div>
 {/if}

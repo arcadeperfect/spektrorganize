@@ -1,6 +1,6 @@
 import { api, catalog, type Config, type JobEvent, type PlanView, type ScanView } from "./api";
 
-export type View = "library" | "develop" | "print" | "source" | "review" | "layout" | "commit" | "settings" | "rerender";
+export type View = "library" | "develop" | "print" | "source" | "review" | "layout" | "commit" | "cull" | "settings" | "rerender";
 
 export interface JobState {
   /** What started it: a card import, a manifest re-render, or a print from the library. */
@@ -60,6 +60,8 @@ class Store {
   scanning = $state(false);
   scanProgress = $state("");
   scanError = $state<string | null>(null);
+  /** Where a finished scan lands: the import review, or the rejecticator. */
+  afterScan: View = "review";
   plan = $state<PlanView | null>(null);
   planError = $state<string | null>(null);
   job = $state<JobState>(freshJob());
@@ -93,7 +95,7 @@ class Store {
       this.scanning = false;
       this.busy = false;
       this.plan = null;
-      this.view = "review";
+      this.view = this.afterScan;
     });
     await api.on<string>("scan-error", (e) => {
       this.scanning = false;
@@ -116,7 +118,8 @@ class Store {
     });
   }
 
-  async startScan(path: string) {
+  async startScan(path: string, then: View = "review") {
+    this.afterScan = then;
     this.scanError = null;
     this.scanning = true;
     this.busy = true;
@@ -128,6 +131,12 @@ class Store {
       this.busy = false;
       this.scanError = String(e);
     }
+  }
+
+  /** Pick up the scan again after files were deleted from the card. */
+  async reloadScan() {
+    this.scan = await api.getScan();
+    this.plan = null;
   }
 
   async setExcluded(ids: number[], excluded: boolean) {

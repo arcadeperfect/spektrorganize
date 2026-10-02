@@ -8,6 +8,7 @@
   import Source from "./lib/views/Source.svelte";
   import Review from "./lib/views/Review.svelte";
   import Layout from "./lib/views/Layout.svelte";
+  import Cull from "./lib/views/Cull.svelte";
   import Commit from "./lib/views/Commit.svelte";
   import Settings from "./lib/views/Settings.svelte";
   import Rerender from "./lib/views/Rerender.svelte";
@@ -41,6 +42,7 @@
           </button>
         {/each}
       </span>
+      <button class="tab" class:active={store.view === "cull"} disabled={!store.scan} onclick={() => (store.view = "cull")}>Rejecticator</button>
       <button class="tab" class:active={store.view === "rerender"} onclick={() => (store.view = "rerender")}>Render</button>
       <button class="tab" class:active={store.view === "settings"} onclick={() => (store.view = "settings")}>Settings</button>
     </nav>
@@ -49,7 +51,7 @@
       <div class="busy">working…</div>
     {/if}
   </header>
-  <main class:flush={store.view === "library" || store.view === "develop" || store.view === "print"}>
+  <main class:flush={store.view === "library" || store.view === "develop" || store.view === "print" || store.view === "cull"}>
     {#if !store.config}
       <div class="muted">loading…</div>
     {:else if store.view === "library"}
@@ -64,6 +66,8 @@
       <Review />
     {:else if store.view === "layout"}
       <Layout />
+    {:else if store.view === "cull"}
+      <Cull />
     {:else if store.view === "commit"}
       <Commit />
     {:else if store.view === "settings"}

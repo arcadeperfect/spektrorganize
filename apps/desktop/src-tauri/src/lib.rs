@@ -23,6 +23,8 @@ pub struct AppState {
     config: Mutex<Config>,
     scan: Mutex<Option<Arc<Scan>>>,
     excluded: Mutex<HashSet<u32>>,
+    /// Groups deleted from the card since the scan. They are gone, not merely excluded.
+    deleted: Mutex<HashSet<u32>>,
     dupes: Mutex<ImportDupes>,
     /// What this import is about, typed on the Layout screen.
     description: Mutex<Option<String>>,
@@ -77,10 +79,11 @@ pub struct ScanView {
     pub sequences: Vec<spektro_core::sequence::SeqGroup>,
 }
 
-fn scan_view(scan: &Scan, excluded: &HashSet<u32>, dupes: &ImportDupes) -> ScanView {
+fn scan_view(scan: &Scan, excluded: &HashSet<u32>, deleted: &HashSet<u32>, dupes: &ImportDupes) -> ScanView {
     let groups = scan
         .groups
         .iter()
+        .filter(|g| !deleted.contains(&g.id.0))
         .map(|g| {
             let p = scan.file(g.primary);
             GroupView {
@@ -110,7 +113,10 @@ fn scan_view(scan: &Scan, excluded: &HashSet<u32>, dupes: &ImportDupes) -> ScanV
         copies: dupes.copies.len(),
         already_held: dupes.known.len(),
         // Four numbered files in a row is a sequence; three holiday snaps are not.
-        sequences: spektro_core::sequence::detect(scan, 4),
+        sequences: spektro_core::sequence::detect(scan, 4)
+            .into_iter()
+            .filter(|s| !s.members.iter().any(|m| deleted.contains(m)))
+            .collect(),
     }
 }
 
@@ -203,6 +209,7 @@ fn start_scan(app: AppHandle, state: State<AppState>, path: String) -> Result<()
     *state.scan.lock().unwrap() = None;
     *state.plan.lock().unwrap() = None;
     state.excluded.lock().unwrap().clear();
+    state.deleted.lock().unwrap().clear();
     *state.dupes.lock().unwrap() = ImportDupes::default();
     let root = PathBuf::from(path);
     std::thread::spawn(move || {
@@ -235,7 +242,7 @@ fn start_scan(app: AppHandle, state: State<AppState>, path: String) -> Result<()
                 }
                 let view = {
                     let ex = st.excluded.lock().unwrap();
-                    scan_view(&scan, &ex, &dupes)
+                    scan_view(&scan, &ex, &HashSet::new(), &dupes)
                 };
                 *st.scan.lock().unwrap() = Some(Arc::new(scan));
                 *st.dupes.lock().unwrap() = dupes;
@@ -254,7 +261,7 @@ fn start_scan(app: AppHandle, state: State<AppState>, path: String) -> Result<()
 #[tauri::command]
 fn get_scan(state: State<AppState>) -> Option<ScanView> {
     let scan = state.scan.lock().unwrap().clone()?;
-    Some(scan_view(&scan, &state.excluded.lock().unwrap(), &state.dupes.lock().unwrap()))
+    Some(scan_view(&scan, &state.excluded.lock().unwrap(), &state.deleted.lock().unwrap(), &state.dupes.lock().unwrap()))
 }
 
 /// What this import is, in the photographer's words. Kept on every photo it brings in.
@@ -272,8 +279,9 @@ fn get_import_description(state: State<AppState>) -> Option<String> {
 #[tauri::command]
 fn set_excluded(state: State<AppState>, ids: Vec<u32>, excluded: bool) {
     let mut ex = state.excluded.lock().unwrap();
+    let deleted = state.deleted.lock().unwrap();
     for id in ids {
-        if excluded {
+        if excluded || deleted.contains(&id) {
             ex.insert(id);
         } else {
             ex.remove(&id);
@@ -284,15 +292,88 @@ fn set_excluded(state: State<AppState>, ids: Vec<u32>, excluded: bool) {
 
 /// Path of a thumbnail JPEG for a group (generated on demand, cached).
 #[tauri::command]
-async fn thumbnail(state: State<'_, AppState>, group: u32) -> Result<Option<String>> {
+async fn thumbnail(state: State<'_, AppState>, group: u32, px: Option<u32>) -> Result<Option<String>> {
+    let px = px.unwrap_or(512).clamp(128, 4096);
     let scan = state.scan.lock().unwrap().clone().ok_or("no scan")?;
     let cache = state.cache_dir.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let g = scan.groups.get(group as usize).ok_or("no such group")?;
-        spektro_core::preview::thumbnail(&scan, g, &cache, 512).map(|p| p.map(|p| p.to_string_lossy().to_string())).map_err(err)
+        spektro_core::preview::thumbnail(&scan, g, &cache, px).map(|p| p.map(|p| p.to_string_lossy().to_string())).map_err(err)
     })
     .await
     .map_err(err)?
+}
+
+/// One file on the card, as listed before the rejecticator deletes anything.
+#[derive(Serialize)]
+pub struct CullFile {
+    pub group: u32,
+    pub path: String,
+    pub size: u64,
+    pub present: bool,
+}
+
+#[derive(Serialize, Default)]
+pub struct CullReport {
+    pub removed: usize,
+    pub bytes: u64,
+    pub failed: Vec<(String, String)>,
+    /// Groups with nothing left on the card.
+    pub groups: Vec<u32>,
+}
+
+/// Every file of these scanned groups — the shot, its camera JPEG and its sidecars.
+#[tauri::command]
+fn cull_files(state: State<AppState>, ids: Vec<u32>) -> Result<Vec<CullFile>> {
+    let scan = state.scan.lock().unwrap().clone().ok_or("no scan")?;
+    let mut out = Vec::new();
+    for id in ids {
+        let g = scan.groups.get(id as usize).ok_or("no such group")?;
+        for f in scan.group_files(g) {
+            out.push(CullFile { group: id, path: f.path.to_string_lossy().to_string(), size: f.size, present: f.path.exists() });
+        }
+    }
+    Ok(out)
+}
+
+/// Delete these groups from the source itself, for good. A card has no useful Trash: files
+/// moved there still fill it. Only paths the scan found under its own root are touched.
+#[tauri::command]
+fn cull_delete(state: State<AppState>, ids: Vec<u32>) -> Result<CullReport> {
+    if state.busy.load(Ordering::SeqCst) {
+        return Err("busy".into());
+    }
+    let scan = state.scan.lock().unwrap().clone().ok_or("no scan")?;
+    let mut report = CullReport::default();
+    for id in ids {
+        let g = scan.groups.get(id as usize).ok_or("no such group")?;
+        let mut left = false;
+        for f in scan.group_files(g) {
+            if !f.path.starts_with(&scan.source.root) {
+                report.failed.push((f.path.to_string_lossy().to_string(), "outside the scanned source".into()));
+                left = true;
+                continue;
+            }
+            match std::fs::remove_file(&f.path) {
+                Ok(()) => {
+                    report.removed += 1;
+                    report.bytes += f.size;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    report.failed.push((f.path.to_string_lossy().to_string(), e.to_string()));
+                    left = true;
+                }
+            }
+        }
+        if !left {
+            report.groups.push(id);
+        }
+    }
+    state.deleted.lock().unwrap().extend(report.groups.iter().copied());
+    state.excluded.lock().unwrap().extend(report.groups.iter().copied());
+    *state.plan.lock().unwrap() = None;
+    Ok(report)
 }
 
 fn build_plan(state: &AppState) -> Result<Arc<Plan>> {
@@ -577,6 +658,7 @@ pub fn run() {
                 config: Mutex::new(config),
                 scan: Mutex::new(None),
                 excluded: Mutex::new(HashSet::new()),
+                deleted: Mutex::new(HashSet::new()),
                 dupes: Mutex::new(ImportDupes::default()),
                 description: Mutex::new(None),
                 plan: Mutex::new(None),
@@ -603,6 +685,8 @@ pub fn run() {
             get_scan,
             set_excluded,
             thumbnail,
+            cull_files,
+            cull_delete,
             make_plan,
             start_import,
             start_render_manifest,
